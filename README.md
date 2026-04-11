@@ -16,3 +16,39 @@
 | 9 | 전체 통합 테스트 | ⬜ 미완 |
 
 ---
+
+## 프로젝트 구조
+
+\```
+chemeet-backend/
+├── app.py                    # Flask 서버, API 엔드포인트
+├── kakao/
+│   ├── kakao_parser.py       # 카카오톡 txt 파싱
+│   └── test_*.txt            # 테스트용 시나리오 데이터
+├── nlp/
+│   └── keyword_extractor.py  # 취향 키워드 추출
+└── requirements.txt
+\```
+
+---
+
+## API 명세
+
+### POST /analyze
+카카오톡 대화 파일 분석
+
+**입력**
+- 형식: multipart/form-data
+- 파라미터: file (카카오톡 대화 txt 파일)
+
+**출력**
+```json
+{
+  "preferred_food": ["한식", "케이크"],
+  "avoided_food": ["파스타"],
+  "general_preference": ["파스타", "고기"],
+  "place": ["카페"],
+  "mood": ["분위기", "감성"],
+  "search_query": "한식 카페 분위기"
+}
+```
