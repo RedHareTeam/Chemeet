@@ -19,7 +19,7 @@
 
 ## 프로젝트 구조
 
-\```
+```
 chemeet-backend/
 ├── app.py                    # Flask 서버, API 엔드포인트
 ├── kakao/
@@ -28,7 +28,7 @@ chemeet-backend/
 ├── nlp/
 │   └── keyword_extractor.py  # 취향 키워드 추출
 └── requirements.txt
-\```
+```
 
 ---
 
