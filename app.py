@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from kakao.kakao_parser import parse_kakao_txt
 from nlp.keyword_extractor import extract_keywords, keywords_to_search_query
+from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
 import os
 import tempfile
 
@@ -31,10 +32,19 @@ def analyze():
         if not messages:
             return jsonify({"error": "파싱된 메시지가 없습니다"}), 400
 
+        # 친밀도 분석
+        intimacy_score = calculate_intimacy_score(messages)
+        intimacy_label = get_intimacy_label(intimacy_score)
+
         keywords = extract_keywords(messages)
         search_query = keywords_to_search_query(keywords)
 
+        radius_expansion = calculate_radius_expansion(intimacy_score)
+
         return jsonify({
+            "intimacy_score": intimacy_score,
+            "intimacy_label": intimacy_label,
+            "radius_expansion": radius_expansion,
             "preferred_food": keywords['preferred_food'],
             "avoided_food": keywords['avoided_food'],
             "general_preference": keywords['general_preference'],
