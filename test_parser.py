@@ -1,6 +1,8 @@
-from nlp.keyword_extractor import extract_keywords, keywords_to_search_query
 from kakao.kakao_parser import parse_kakao_txt
 from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
+from nlp.openai_analyzer import analyze_with_openai
+
+print("\n===== OpenAI 취향 분석 테스트 =====")
 
 files = {
     "시나리오1 친구": "kakao/test_friend.txt",
@@ -10,18 +12,17 @@ files = {
 
 for name, path in files.items():
     messages = parse_kakao_txt(path)
-    keywords = extract_keywords(messages)
-    query = keywords_to_search_query(keywords)
+    result = analyze_with_openai(messages)
     print(f"\n========== {name} ==========")
-    print(f"선호 음식: {keywords['preferred_food']}")
-    print(f"피하는 음식: {keywords['avoided_food']}")
-    print(f"평소 취향: {keywords['general_preference']}")
-    print(f"장소: {keywords['place']}")
-    print(f"분위기: {keywords['mood']}")
-    print(f"검색 쿼리: {query}")
+    print(f"만남 목적: {result['purpose']}")
+    print(f"선호 음식: {result['preferred_food']}")
+    print(f"피하는 음식: {result['avoided_food']}")
+    print(f"장소 유형: {result['place_type']}")
+    print(f"분위기: {result['mood']}")
+    print(f"검색 쿼리: {result['search_query']}")
 
-print("\n===== 친밀도 + 양보 지수 테스트 =====")
 
+print("\n===== 친밀도 테스트 =====")
 
 for name, path in files.items():
     messages = parse_kakao_txt(path)

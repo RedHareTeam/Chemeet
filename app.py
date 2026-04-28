@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from kakao.kakao_parser import parse_kakao_txt
-from nlp.keyword_extractor import extract_keywords, keywords_to_search_query
+from nlp.openai_analyzer import analyze_with_openai
 from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
 import os
 import tempfile
@@ -31,26 +31,29 @@ def analyze():
 
         if not messages:
             return jsonify({"error": "파싱된 메시지가 없습니다"}), 400
+        # OpenAI 취향 분석
+        keywords = analyze_with_openai(messages)
 
-        # 친밀도 분석
-        intimacy_score = calculate_intimacy_score(messages)
+        # 친밀도 분석용
+        INTIMACY_MAX_MESSAGES = 100
+        messages_for_intimacy = messages[-INTIMACY_MAX_MESSAGES:]
+
+        intimacy_score = calculate_intimacy_score(messages_for_intimacy)
         intimacy_label = get_intimacy_label(intimacy_score)
-
-        keywords = extract_keywords(messages)
-        search_query = keywords_to_search_query(keywords)
-
         radius_expansion = calculate_radius_expansion(intimacy_score)
 
         return jsonify({
+            "senders": keywords['senders'],
             "intimacy_score": intimacy_score,
             "intimacy_label": intimacy_label,
             "radius_expansion": radius_expansion,
+            "purpose": keywords['purpose'],
             "preferred_food": keywords['preferred_food'],
             "avoided_food": keywords['avoided_food'],
-            "general_preference": keywords['general_preference'],
-            "place": keywords['place'],
+            "place_type": keywords['place_type'],
+            "secondary_place_type": keywords['secondary_place_type'],
             "mood": keywords['mood'],
-            "search_query": search_query
+            "search_query": keywords['search_query']
         })
 
     finally:
