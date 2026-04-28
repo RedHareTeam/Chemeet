@@ -1,3 +1,31 @@
+# from recommend.intersection import calculate_intersection
+
+# print("\n===== 교집합 계산 테스트 =====")
+
+# # 테스트1: 교집합 있는 경우 (홍대 근처 두 지점)
+# user1 = {"lat": 37.5573, "lng": 126.9245, "radius": 3000}
+# user2 = {"lat": 37.5443, "lng": 126.9526, "radius": 3000}
+# result = calculate_intersection(user1, user2, radius_expansion=1.0)
+# print(f"\n교집합 있는 경우:")
+# print(f"교집합 여부: {result['has_intersection']}")
+# print(f"중심 좌표: {result['center_lat']}, {result['center_lng']}")
+# print(f"검색 반경: {result['search_radius']}m")
+
+# # 테스트2: 교집합 없는 경우 (멀리 떨어진 두 지점)
+# user1 = {"lat": 37.5573, "lng": 126.9245, "radius": 1000}
+# user2 = {"lat": 37.4979, "lng": 127.0276, "radius": 1000}
+# result = calculate_intersection(user1, user2, radius_expansion=1.0)
+# print(f"\n교집합 없는 경우:")
+# print(f"교집합 여부: {result['has_intersection']}")
+# print(f"중심 좌표: {result['center_lat']}, {result['center_lng']}")
+# print(f"검색 반경: {result['search_radius']}m")
+
+# # 테스트3: 친밀도 높아서 반경 확장
+# result = calculate_intersection(user1, user2, radius_expansion=1.5)
+# print(f"\n반경 확장 (x1.5) 경우:")
+# print(f"교집합 여부: {result['has_intersection']}")
+# print(f"중심 좌표: {result['center_lat']}, {result['center_lng']}")
+# print(f"검색 반경: {result['search_radius']}m")
 from kakao.kakao_parser import parse_kakao_txt
 from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
 from nlp.openai_analyzer import analyze_with_openai

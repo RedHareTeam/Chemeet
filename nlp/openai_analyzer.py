@@ -30,12 +30,42 @@ PURPOSE_MOOD_MAP = {
     ("데이트", "레스토랑"): "분위기 좋은",
 }
 
+
+def detect_purpose(conversation):
+    if any(word in conversation for word in ["노트북", "회의", "미팅", "업무", "협업"]):
+        return "업무미팅"
+    if any(word in conversation for word in ["기념일", "데이트"]):
+        return "데이트"
+    if any(word in conversation for word in ["술 한잔", "한잔 하자", "술이나", "한잔할"]):
+        return "술자리"
+    return "친목"
+
+
+def make_search_query(purpose, main_place, conversation):
+    """purpose + place_type 기반 search_query 생성"""
+
+    # 노트북 언급 시 우선
+    if any(word in conversation for word in ["노트북", "작업", "미팅 가능"]):
+        return "노트북 카페"
+
+    # 술자리
+    if purpose == "술자리":
+        return "술집 맛집"
+
+    # 대화에서 감성 표현 있으면 감성 우선
+    if any(word in conversation for word in ["감성", "분위기", "감성 있는", "분위기 있는"]):
+        return f"감성 {main_place}"
+
+    # PURPOSE_MOOD_MAP 기반
+    auto_mood = PURPOSE_MOOD_MAP.get((purpose, main_place), "")
+    return f"{auto_mood} {main_place}".strip() if auto_mood else main_place
+
+
 def analyze_with_openai(messages):
     """
     OpenAI API로 대화 분석
     취향 키워드 추출 (preferred_food, avoided_food, place_type, mood)
     """
-
     conversation = "\n".join(
         f"[{m['sender']}] {m['message']}" for m in messages
     )
@@ -43,62 +73,30 @@ def analyze_with_openai(messages):
     senders = list(dict.fromkeys(m['sender'] for m in messages))
     sender_info = f"대화 참여자: {senders[0]}, {senders[1]}" if len(senders) >= 2 else ""
 
+    # purpose는 코드로 판단
+    purpose = detect_purpose(conversation)
+
     prompt = f"""
 다음은 두 사람의 카카오톡 대화입니다.
 
 {sender_info}
 
-[예시1 - 친구 만남]
+[예시]
 대화:
 [희주] 나 최근에 고기 많이 먹어서 가벼운 거 먹고 싶어
 [재영] 저번에 파스타 먹었으니까 이번엔 한식 먹자
 [희주] 좋아
 [재영] 조용하고 감성 있는 데로 찾았어
-[희주] 오 분위기 미쳤다 거기 가자
 [재영] 밥 먹고 카페도 가자
 [희주] 좋아
 
 올바른 분석:
 {{
-  "purpose": "친목",
   "preferred_food": ["한식"],
   "avoided_food": ["고기", "파스타"],
   "place_type": ["한식당"],
   "secondary_place_type": ["카페"],
-  "mood": ["감성 있는", "조용한"],
-  "search_query": "감성 한식당"
-}}
-
-[예시2 - 술자리 만남]
-대화:
-[민준] 형 시간 괜찮으시면 술 한잔 하면서 얘기 좀 들을 수 있을까요
-[현우] 오 좋지
-
-올바른 분석:
-{{
-  "purpose": "술자리",
-  "preferred_food": ["술"],
-  "avoided_food": [],
-  "place_type": ["술집"],
-  "secondary_place_type": [],
-  "mood": ["편안한"],
-  "search_query": "편안한 술집"
-}}
-
-[예시3 - 업무 미팅]
-대화:
-[안영이] 조용한 카페 어떠세요
-[남도산] 네 좋습니다 노트북 사용 가능한 곳이면 더 좋겠습니다
-
-올바른 분석:
-{{
-  "purpose": "업무미팅",
-  "preferred_food": [],
-  "avoided_food": [],
-  "place_type": ["카페"],
-  "secondary_place_type": [],
-  "mood": ["조용한"],
-  "search_query": "노트북 카페"
+  "mood": ["감성 있는", "조용한"]
 }}
 
 이제 아래 실제 대화를 분석해주세요:
@@ -108,49 +106,32 @@ def analyze_with_openai(messages):
 
 [분석 규칙]
 
-purpose 규칙 (반드시 아래 중 하나만 선택):
-- "술자리": "술 한잔", "한잔 하자" 언급 시
-- "업무미팅": 업무, 회의, 노트북, 미팅 언급 시
-- "데이트": 커플, 기념일, 설레는 분위기 언급 시
-- "친목": 그 외 일반 만남
-
 place_type 규칙:
-- 이번 약속의 1차 목적 장소만 선택 (1개)
-- "밥 먹고 카페", "식사 후 카페", "2차로 카페"처럼 순서가 있으면 place_type에는 식당만
-- 카페는 secondary_place_type에 넣기
-- 반드시 아래 업종 중에서만 선택: 카페, 술집, 한식당, 파스타집, 바, 스터디카페, 이자카야
+- 1차 목적 장소만 1개 선택
+- "밥 먹고 카페", "2차로 카페"처럼 순서 있으면 식당만 place_type, 카페는 secondary_place_type
+- 반드시 아래 중에서만: 카페, 술집, 한식당, 파스타집, 바, 스터디카페, 이자카야
 
 secondary_place_type 규칙:
-- 2차 장소가 있으면 여기에 넣기
+- 2차 장소 있으면 여기에 넣기
 - 없으면 빈 배열
 
 mood 규칙:
 - 대화에서 직접 표현된 경우에만 추출
-- "감성", "감성 있는", "분위기", "분위기 있는", "조용한", "편안한" 같은 단어가 나오면 추출
-- 1차 장소가 아닌 2차 장소(카페 등) 맥락에서 나온 분위기 표현도 추출
+- "감성", "분위기", "조용한", "편안한" 같은 표현이 장소 맥락에서 나오면 추출
 - 없으면 빈 배열
 
-search_query 규칙:
-- place_type 1개 기준으로 작성
-- "노트북", "작업", "미팅 가능" 언급 시 "노트북 카페" 우선
-- purpose가 "업무미팅"이면 "조용한" 우선
-- purpose가 "친목", "술자리", "데이트"이면 "감성", "분위기 있는", "편안한" 우선
-- 지역명 제외, 2~3단어
-
 avoided_food 규칙:
-- avoided_food에 있는 음식은 preferred_food에 절대 포함하지 말것
-- 가장 최근 대화에서 언급된 음식/장소를 1순위로
-- 중요: 과거에 먹고 싶다고 말한 음식이어도 최근 대화에서 "저번에 먹었으니까", "이번엔 다른 거"라고 언급되면 avoided_food로 분류한다.
+- avoided는 preferred에 절대 포함 금지
+- "저번에 ~먹었으니까", "~말고", "~많이 먹어서" → avoided
+- 최근 대화 우선
 
 JSON으로만 응답:
 {{
-  "purpose": "",
   "preferred_food": [],
   "avoided_food": [],
   "place_type": [],
   "secondary_place_type": [],
-  "mood": [],
-  "search_query": ""
+  "mood": []
 }}
 """
 
@@ -187,32 +168,18 @@ JSON으로만 응답:
         # 2. place_type 최대 1개
         parsed["place_type"] = parsed["place_type"][:1]
 
-        # 3. search_query 재생성 (PURPOSE_MOOD_MAP 기반)
+        # 3. search_query 생성
         main_place = parsed["place_type"][0] if parsed["place_type"] else "맛집"
-        purpose = parsed.get("purpose", "")
+        parsed["search_query"] = make_search_query(purpose, main_place, conversation)
+        parsed["search_query"] = parsed["search_query"].replace(',', '').strip()
 
-        if any(word in conversation for word in ["노트북", "작업", "미팅 가능"]):
-            parsed["search_query"] = "노트북 카페"
-        else:
-            auto_mood = PURPOSE_MOOD_MAP.get((purpose, main_place), "")
-            
-            # 대화에서 감성 표현 있으면 auto_mood 덮어씌우기
-            if any(word in conversation for word in ["감성", "분위기", "감성 있는", "분위기 있는"]):
-                auto_mood = "감성"
-
-            main_mood = auto_mood if auto_mood else (
-                parsed["mood"][0] if parsed["mood"] else ""
-            )
-            parsed["search_query"] = f"{main_mood} {main_place}".strip()
-
-        # 4. 쉼표 제거
-        parsed['search_query'] = parsed['search_query'].replace(',', '').strip()
+        parsed['purpose'] = purpose
         parsed['senders'] = senders
         return parsed
 
     except json.JSONDecodeError:
         return {
-            "purpose": "",
+            "purpose": purpose,
             "preferred_food": [],
             "avoided_food": [],
             "place_type": [],
