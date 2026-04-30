@@ -37,7 +37,7 @@ def search_places(query, lat, lng, radius=1500, size=5):
         "y": lat,
         "radius": radius,
         "size": size,
-        "sort": "distance"
+        "sort": "accuracy"
     }
 
     response = requests.get(KAKAO_LOCAL_URL, headers=headers, params=params)
