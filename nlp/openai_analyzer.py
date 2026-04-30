@@ -41,25 +41,33 @@ def detect_purpose(conversation):
     return "친목"
 
 
-def make_search_query(purpose, main_place, conversation):
-    """purpose + place_type 기반 search_query 생성"""
+def has_strong_signal(conversation, keywords, threshold=2):
+    """키워드가 threshold번 이상 등장해야 강한 신호로 판단"""
+    return sum(conversation.count(k) for k in keywords) >= threshold
 
-    # 노트북 언급 시 우선
+
+def make_search_query(purpose, main_place, conversation, mood):
+
+    # 1순위: 노트북/업무 신호
     if any(word in conversation for word in ["노트북", "작업", "미팅 가능"]):
         return "노트북 카페"
 
-    # 술자리
+    # 2순위: 술자리
     if purpose == "술자리":
         return "술집 맛집"
 
-    # 대화에서 감성 표현 있으면 감성 우선
-    if any(word in conversation for word in ["감성", "분위기", "감성 있는", "분위기 있는"]):
+    # 3순위: 음식 중심 신호 (2번 이상 언급)
+    if has_strong_signal(conversation, ["든든", "국물", "고기 먹고"]):
+        return f"{main_place} 맛집"
+
+    # 4순위: 감성/분위기 신호 (2번 이상 언급)
+    if has_strong_signal(conversation, ["감성", "분위기", "오랜만"]) or \
+       any(m in ["감성 있는", "분위기 있는"] for m in mood):
         return f"감성 {main_place}"
 
-    # PURPOSE_MOOD_MAP 기반
+    # 5순위: purpose 기반 기본값
     auto_mood = PURPOSE_MOOD_MAP.get((purpose, main_place), "")
     return f"{auto_mood} {main_place}".strip() if auto_mood else main_place
-
 
 def analyze_with_openai(messages):
     """
@@ -170,7 +178,9 @@ JSON으로만 응답:
 
         # 3. search_query 생성
         main_place = parsed["place_type"][0] if parsed["place_type"] else "맛집"
-        parsed["search_query"] = make_search_query(purpose, main_place, conversation)
+        parsed["search_query"] = make_search_query(
+            purpose, main_place, conversation, parsed.get("mood", [])
+        )
         parsed["search_query"] = parsed["search_query"].replace(',', '').strip()
 
         parsed['purpose'] = purpose
