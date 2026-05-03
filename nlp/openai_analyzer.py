@@ -19,7 +19,7 @@ PLACE_TYPE_MAP = {
     "스터디": "스터디카페"
 }
 
-# avoided_food → place_type 매핑 (보정용)
+# avoided_food → place_type 매핑 
 FOOD_PLACE_MAP = {
     "라멘": "라멘집",
     "파스타": "파스타집",

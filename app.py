@@ -7,6 +7,7 @@ import tempfile
 from recommend.intersection import calculate_intersection
 from recommend.place import search_places
 from recommend.query_builder import clean_search_query, get_primary_queries, filter_by_category
+from recommend.weather import get_weather
 
 app = Flask(__name__)
 
@@ -97,6 +98,20 @@ def recommend():
             center_lng = nearest['lng']
             area_name = nearest['name']
 
+    # 날씨 정보 가져오기
+    weather = get_weather(center_lat, center_lng)
+    condition = weather.get("condition", "clear")
+
+    # 날씨 나쁠 때 반경 줄이기 + 역 근처
+    if condition in ["rain", "snow", "thunder"]:
+        search_radius = min(search_radius, 1500)
+        stations = search_places("지하철역", center_lat, center_lng, radius=2000, size=3)
+        if stations:
+            nearest = stations[0]
+            center_lat = nearest['lat']
+            center_lng = nearest['lng']
+            area_name = nearest['name']
+    
     # 장소 검색
     base_query = clean_search_query(search_query)
     primary_queries = get_primary_queries(mood, base_query)
@@ -124,6 +139,7 @@ def recommend():
         "center_lat": center_lat,
         "center_lng": center_lng,
         "search_radius": search_radius,
+        "weather": weather,
         "places": top_places
     })
     
