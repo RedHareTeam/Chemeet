@@ -8,6 +8,7 @@ from recommend.intersection import calculate_intersection
 from recommend.place import search_places
 from recommend.query_builder import clean_search_query, get_primary_queries, filter_by_category
 from recommend.weather import get_weather
+from recommend.midpoint import find_best_midpoint
 
 app = Flask(__name__)
 
@@ -84,19 +85,21 @@ def recommend():
 
     # 교집합 계산
     intersection = calculate_intersection(user1, user2, radius_expansion)
-    center_lat = intersection['center_lat']
-    center_lng = intersection['center_lng']
-    search_radius = intersection['search_radius']
 
-    # 교집합 없을 때 근처 지하철역으로 보정
-    area_name = None
-    if not intersection['has_intersection']:
-        stations = search_places("지하철역", center_lat, center_lng, radius=2000, size=3)
-        if stations:
-            nearest = stations[0]
-            center_lat = nearest['lat']
-            center_lng = nearest['lng']
-            area_name = nearest['name']
+    # 최적 중간지점 계산 (대중교통 시간 기반)
+    midpoint = find_best_midpoint(user1, user2)
+
+    if midpoint:
+        center_lat = midpoint["center_lat"]
+        center_lng = midpoint["center_lng"]
+        area_name = midpoint["area_name"]
+    else:
+        # fallback: 교집합 중심
+        center_lat = intersection["center_lat"]
+        center_lng = intersection["center_lng"]
+        area_name = None
+
+    search_radius = intersection["search_radius"]
 
     # 날씨 정보 가져오기
     weather = get_weather(center_lat, center_lng)
@@ -134,12 +137,15 @@ def recommend():
     top_places = filtered[:5]
 
     return jsonify({
-        "has_intersection": intersection['has_intersection'],
+        "has_intersection": intersection["has_intersection"],
         "area_name": area_name,
         "center_lat": center_lat,
         "center_lng": center_lng,
         "search_radius": search_radius,
         "weather": weather,
+        "user1_transit": midpoint["user1"] if midpoint else None,
+        "user2_transit": midpoint["user2"] if midpoint else None,
+        "total_time": midpoint["total_time"] if midpoint else None,
         "places": top_places
     })
     

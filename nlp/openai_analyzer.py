@@ -3,10 +3,6 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import json
 
-load_dotenv()
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 PLACE_TYPE_MAP = {
     "한식": "한식당",
     "파스타": "파스타집",
@@ -103,6 +99,9 @@ def analyze_with_openai(messages):
     OpenAI API로 대화 분석
     취향 키워드 추출 (preferred_food, avoided_food, place_type, mood)
     """
+    load_dotenv()
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
     conversation = "\n".join(
         f"[{m['sender']}] {m['message']}" for m in messages
     )
@@ -119,17 +118,17 @@ def analyze_with_openai(messages):
 
 [예시]
 대화:
-[재영] 저번에 라멘 먹었으니까 이번엔 다른 거 먹자
-[재영] 나 요즘 피자 땡기던데
-[희주] 오 피자 좋지
+[A] 저번에 삼겹살 먹었으니까 이번엔 다른 거 먹자
+[A] 파스타 먹고 감성 있는 카페 가자
+[B] 좋아 조용한 데로 찾아볼게
 
 올바른 분석:
 {{
-  "preferred_food": ["피자"],
-  "avoided_food": ["라멘"],
-  "place_type": ["피자집"],
-  "secondary_place_type": [],
-  "mood": []
+  "preferred_food": ["파스타"],
+  "avoided_food": ["삼겹살"],
+  "place_type": ["파스타집"],
+  "secondary_place_type": ["카페"],
+  "mood": ["감성", "조용한"]
 }}
 
 이제 아래 실제 대화를 분석해주세요:
@@ -149,8 +148,9 @@ secondary_place_type 규칙:
 - 없으면 빈 배열
 
 mood 규칙:
-- 대화에서 직접 표현된 경우에만 추출
-- "감성", "분위기", "조용한", "편안한" 같은 표현이 장소 맥락에서 나오면 추출
+- 반드시 대화 전체를 읽고 장소 관련 표현 찾기
+- "감성 있는", "감성 카페", "조용한 데", "분위기 좋은" → 추출
+- 대화에 mood 표현이 있는데 빈 배열로 내면 오답
 - 없으면 빈 배열
 
 avoided_food 규칙:
@@ -197,7 +197,24 @@ JSON으로만 응답:
         # 1. avoided에 있는 음식은 preferred에서 제거
         preferred = parsed.get("preferred_food", [])
         avoided = parsed.get("avoided_food", [])
+
+        # 룰 기반 avoided 보정: "저번에 X 먹었으니까" 패턴 직접 추출
+        import re
+        rule_avoided = re.findall(r'저번에\s+(\S+)\s+먹었으니까', conversation)
+        for food in rule_avoided:
+            food = food.strip()
+            if food not in avoided:
+                avoided.append(food)
+        parsed["avoided_food"] = avoided
+
         parsed["preferred_food"] = [f for f in preferred if f not in avoided]
+
+        # avoided_food 기반 preferred 강제 제거 (GPT 오류 보정)
+        avoided_normalized = [f.strip() for f in avoided]
+        parsed["preferred_food"] = [
+            f for f in parsed["preferred_food"]
+            if f.strip() not in avoided_normalized
+        ]
 
         # 2. place_type 최대 1개
         if parsed["preferred_food"]:
