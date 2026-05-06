@@ -1,7 +1,7 @@
 import requests
 from recommend.weather import get_weather
 
-url = "http://127.0.0.1:5000/recommend"
+url = "http://172.20.10.3:5000/recommend"
 
 data = {
     "user1": {"lat": 37.5573, "lng": 126.9245, "radius": 3000},

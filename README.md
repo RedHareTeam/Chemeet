@@ -1,5 +1,7 @@
 # Chemeet Backend
 
+카카오톡 대화 분석 기반 모임 장소 추천 앱 백엔드 서버 (Flask)
+
 ---
 
 ## 개발 현황
@@ -9,7 +11,7 @@
 | 1~8 | 환경 구축 / 파싱 / 분석 / 추천 / 날씨 | ✅ 완료 |
 | 9 | 대중교통 기반 중간지점 (ODsay) | ✅ 완료 |
 | 10 | 3~4명 확장 | ⬜ 예정 |
-| 11 | Firebase 방문 히스토리 | ⬜ 예정 |
+| 11 | Firebase 방문 히스토리 | ⬜ 예정  |
 
 ---
 
@@ -17,19 +19,26 @@
 
 ```
 chemeet-backend/
-├── app.py
+├── app.py                      # Flask 서버, /analyze /recommend 엔드포인트
 ├── kakao/
-│   └── kakao_parser.py
+│   ├── __init__.py
+│   └── kakao_parser.py         # 카카오톡 txt 파일 파싱
 ├── nlp/
-│   ├── openai_analyzer.py
-│   └── rule_based.py
-└── recommend/
-    ├── intersection.py
-    ├── midpoint.py       # 대중교통 기반 최적 중간지점 선택
-    ├── place.py
-    ├── query_builder.py
-    ├── transit.py        # ODsay 대중교통 이동시간
-    └── weather.py
+│   ├── __init__.py
+│   ├── openai_analyzer.py      # GPT-4o-mini 취향 키워드 추출
+│   └── rule_based.py           # 친밀도 점수 계산 (반말 비율, 메시지 수 등)
+├── recommend/
+│   ├── __init__.py
+│   ├── intersection.py         # 두 사용자 이동 가능 구역 교집합 계산 (Shapely)
+│   ├── midpoint.py             # 대중교통 시간 기반 최적 중간지점 역 선택
+│   ├── place.py                # 카카오맵 로컬 API 장소 검색
+│   ├── query_builder.py        # 검색 쿼리 생성 및 카테고리 필터링
+│   ├── transit.py              # ODsay API 대중교통 이동시간 계산
+│   └── weather.py              # OpenWeatherMap 날씨 정보
+└── tests/
+    ├── samples/                # 테스트용 카카오톡 대화 파일 (친구/지인/직장)
+    ├── test_parser.py          # 파싱 / 취향분석 / 친밀도 / 교집합 단위 테스트
+    └── test_recommend.py       # /recommend 엔드포인트 통합 테스트
 ```
 
 ---
@@ -107,9 +116,11 @@ chemeet-backend/
 
 ---
 
+## 프론트 연동 
+
 ### 호출 순서
 ```
-1. 대화 파일 업로드 → POST /analyze → 분석 결과 저장
+1. 대화 파일 업로드  → POST /analyze → 분석 결과 저장
 2. 두 명 지도에서 원 그리기 완료
 3. POST /recommend → 중간지점 + 장소 추천 표시
 ```
@@ -120,13 +131,13 @@ chemeet-backend/
 |------|------|
 | `intimacy_score` | 지도 원 색상/투명도 시각화 (0~100) |
 | `radius_expansion` | 지도 원 크기 조정 배수 (1.0 / 1.3 / 1.5) |
-| `area_name` | 중간지점 역 이름 ("서강대역에서 만나요") |
+| `area_name` | 중간지점 역 이름 ("서강대역") |
 | `user1_transit.time` | A의 대중교통 이동시간 (분) |
 | `user2_transit.time` | B의 대중교통 이동시간 (분) |
 | `total_time` | 두 사람 이동시간 합산 (분) |
 | `secondary_place_type` | 2차 장소 별도 UI 표시 (예: 식사 후 카페) |
 | `weather.condition` | 날씨 아이콘 표시 |
-| `places` | 추천 장소 카드 (최대 5개) |
+| `places` | 추천 장소 카드 (최대 20개) |
 
 ### 응답 시간 참고
 - `/analyze`: 약 3~5초 (OpenAI API) → 로딩 인디케이터 필요

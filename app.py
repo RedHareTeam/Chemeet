@@ -134,7 +134,7 @@ def recommend():
 
     # 카테고리 필터링
     filtered = filter_by_category(unique_places, base_query)
-    top_places = filtered[:5]
+    top_places = filtered[:20]
 
     return jsonify({
         "has_intersection": intersection["has_intersection"],
@@ -150,4 +150,4 @@ def recommend():
     })
     
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
