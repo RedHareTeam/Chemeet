@@ -21,7 +21,6 @@ class AnalysisService {
             Uri.parse('$_baseUrl/analyze'),
             headers: {'Content-Type': 'application/json; charset=utf-8'},
             body: jsonEncode({
-              'room_id': roomId,
               'txt_content': txtContent,
             }),
           )
@@ -33,6 +32,8 @@ class AnalysisService {
           'intimacyScore': data['intimacy_score'] ?? 74,
           'keywords':      List<String>.from(data['keywords'] ?? []),
           'partnerName':   data['partner_name'] ?? '상대방',
+          'searchQuery':   data['search_query'] ?? '맛집',
+          'mood':          List<String>.from(data['mood'] ?? []),
         };
       } else {
         throw Exception('statusCode: ${res.statusCode}');
@@ -44,8 +45,10 @@ class AnalysisService {
       await Future.delayed(const Duration(seconds: 3));
       result = {
         'intimacyScore': 74,
-        'keywords':      ['카페', '조용한 곳', '낮 시간대', '실내', '브런치'],
+        'keywords':      ['카페', '조용한 곳'],
         'partnerName':   '상대방',
+        'searchQuery':   '맛집',
+        'mood':          [],
       };
     }
 
@@ -54,6 +57,8 @@ class AnalysisService {
       'intimacyScore': result['intimacyScore'],
       'keywords':      result['keywords'],
       'partnerName':   result['partnerName'],
+      'searchQuery':   result['searchQuery'],
+      'mood':          result['mood'],
     });
 
     return result;

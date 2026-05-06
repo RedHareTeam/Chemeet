@@ -4,3 +4,10 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+# Flutter
+*.iml
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/

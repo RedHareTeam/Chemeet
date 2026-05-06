@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-KAKAO_API_KEY = os.getenv("KAKAO_API_KEY")
+KAKAO_API_KEY = os.getenv("KAKAO_REST_KEY")
 KAKAO_LOCAL_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
 

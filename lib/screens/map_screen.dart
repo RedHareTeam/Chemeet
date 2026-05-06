@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/kakao_map_webview.dart';
 import '../services/circle_service.dart';
-import '../services/place_service.dart';
 import '../services/room_service.dart';
 import 'place_screen.dart';
 import 'package:chemeet/app_theme.dart';
@@ -29,6 +31,7 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final _circleService = CircleService();
   final _roomService = RoomService();
+  final _db = FirebaseFirestore.instance;
   final _mapKey = GlobalKey<KakaoMapWebViewState>();
 
   final List<StreamSubscription> _subs = [];
@@ -37,6 +40,11 @@ class _MapScreenState extends State<MapScreen> {
   double _myLat = 37.5665;
   double _myLng = 126.9780;
   double _myRadius = 3000;
+
+  double? _partnerLat;
+  double? _partnerLng;
+  double? _partnerRadius;
+
   bool _isDrawMode = false;
   bool _isRequesting = false;
 
@@ -86,10 +94,15 @@ class _MapScreenState extends State<MapScreen> {
           .watchPartnerCircle(roomId: widget.roomId, partnerId: memberId)
           .listen((data) {
         if (data != null) {
+          setState(() {
+            _partnerLat = (data['lat'] as num).toDouble();
+            _partnerLng = (data['lng'] as num).toDouble();
+            _partnerRadius = (data['radius'] as num).toDouble();
+          });
           _mapKey.currentState?.updatePartnerCircle(
-            (data['lat'] as num).toDouble(),
-            (data['lng'] as num).toDouble(),
-            (data['radius'] as num).toDouble(),
+            _partnerLat!,
+            _partnerLng!,
+            _partnerRadius!,
             data['userName'] ?? '상대방',
           );
         }
@@ -150,13 +163,53 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // 장소 추천 요청
+  // 장소 추천 요청 — 백엔드 /recommend 호출
   Future<void> _requestPlaces() async {
     if (_isRequesting) return;
+
+    if (_partnerLat == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('상대방이 아직 구역을 설정하지 않았어요')),
+      );
+      return;
+    }
+
     setState(() => _isRequesting = true);
+
     try {
-      final places = await PlaceService().searchNearby(lat: _myLat, lng: _myLng);
-      await _circleService.savePlaces(widget.roomId, places);
+      // Firestore에서 분석 결과 읽기
+      final roomSnap = await _db.collection('rooms').doc(widget.roomId).get();
+      final roomData = roomSnap.data() ?? {};
+      final searchQuery = roomData['searchQuery'] ?? '맛집';
+      final mood = List<String>.from(roomData['mood'] ?? []);
+      final intimacyScore = (roomData['intimacyScore'] ?? 50).toDouble();
+
+      final response = await http.post(
+        Uri.parse('http://10.0.2.2:5000/recommend'),
+        headers: {'Content-Type': 'application/json; charset=utf-8'},
+        body: jsonEncode({
+          'user1': {'lat': _myLat, 'lng': _myLng, 'radius': _myRadius},
+          'user2': {'lat': _partnerLat, 'lng': _partnerLng, 'radius': _partnerRadius},
+          'search_query': searchQuery,
+          'mood': mood,
+          'intimacy_score': intimacyScore,
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final places = List<Map<String, dynamic>>.from(data['places'] ?? []);
+        await _circleService.savePlaces(widget.roomId, places);
+      } else {
+        throw Exception('statusCode: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('장소 추천 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('장소 추천 중 오류가 발생했어요')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isRequesting = false);
     }

@@ -19,36 +19,41 @@ def index():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    if 'file' not in request.files:
-        return jsonify({"error": "파일이 없습니다"}), 400
-
-    file = request.files['file']
-
-    if file.filename == '':
-        return jsonify({"error": "파일명이 없습니다"}), 400
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.txt', mode='wb') as tmp:
-        file.save(tmp)
-        tmp_path = tmp.name
+    tmp_path = None
 
     try:
+        if not request.is_json:
+            return jsonify({"error": "JSON 형식으로 요청해주세요"}), 400
+
+        data = request.get_json()
+        txt_content = data.get('txt_content', '')
+        if not txt_content:
+            return jsonify({"error": "txt_content가 비어있습니다"}), 400
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt', mode='w', encoding='utf-8') as tmp:
+            tmp.write(txt_content)
+            tmp_path = tmp.name
+
         messages = parse_kakao_txt(tmp_path)
 
         if not messages:
             return jsonify({"error": "파싱된 메시지가 없습니다"}), 400
+
         # OpenAI 취향 분석
         keywords = analyze_with_openai(messages)
 
-        # 친밀도 분석용
+        # 친밀도 분석
         INTIMACY_MAX_MESSAGES = 100
         messages_for_intimacy = messages[-INTIMACY_MAX_MESSAGES:]
-
         intimacy_score = calculate_intimacy_score(messages_for_intimacy)
         intimacy_label = get_intimacy_label(intimacy_score)
         radius_expansion = calculate_radius_expansion(intimacy_score)
 
+        senders = keywords['senders']
+
         return jsonify({
-            "senders": keywords['senders'],
+            "senders": senders,
+            "partner_name": senders[1] if len(senders) >= 2 else "",
             "intimacy_score": intimacy_score,
             "intimacy_label": intimacy_label,
             "radius_expansion": radius_expansion,
@@ -58,11 +63,14 @@ def analyze():
             "place_type": keywords['place_type'],
             "secondary_place_type": keywords['secondary_place_type'],
             "mood": keywords['mood'],
-            "search_query": keywords['search_query']
+            "search_query": keywords['search_query'],
+            "keywords": keywords['mood'] + keywords['place_type'],
         })
 
     finally:
-        os.remove(tmp_path)
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
 
 @app.route('/recommend', methods=['POST'])
 def recommend():
@@ -94,7 +102,6 @@ def recommend():
         center_lng = midpoint["center_lng"]
         area_name = midpoint["area_name"]
     else:
-        # fallback: 교집합 중심
         center_lat = intersection["center_lat"]
         center_lng = intersection["center_lng"]
         area_name = None
@@ -114,7 +121,7 @@ def recommend():
             center_lat = nearest['lat']
             center_lng = nearest['lng']
             area_name = nearest['name']
-    
+
     # 장소 검색
     base_query = clean_search_query(search_query)
     primary_queries = get_primary_queries(mood, base_query)
@@ -135,6 +142,8 @@ def recommend():
     # 카테고리 필터링
     filtered = filter_by_category(unique_places, base_query)
     top_places = filtered[:20]
+    print(f"장소 수: {len(top_places)}")
+    print(f"search_query: {search_query}, mood: {mood}")
 
     return jsonify({
         "has_intersection": intersection["has_intersection"],
@@ -148,6 +157,7 @@ def recommend():
         "total_time": midpoint["total_time"] if midpoint else None,
         "places": top_places
     })
-    
+
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=True)
