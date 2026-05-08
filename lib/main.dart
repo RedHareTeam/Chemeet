@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/auth_screen.dart';
@@ -10,9 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
 
@@ -31,15 +28,13 @@ class MyApp extends StatelessWidget {
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snap) {
-          if(snap.connectionState == ConnectionState.waiting) {
+          if (snap.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
           }
           // 로그인 상태면 방 목록, 아니면 로그인 화면
-          return snap.hasData
-              ? const RoomListScreen()
-              : const AuthScreen();
+          return snap.hasData ? const RoomListScreen() : const AuthScreen();
         },
       ),
     );

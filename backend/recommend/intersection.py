@@ -79,3 +79,19 @@ def calculate_intersection(user1, user2, radius_expansion=1.0):
         "center_lng": round(center_lng, 6),
         "search_radius": max(search_radius, 500)  # 최소 500m
     }
+
+
+def get_intersection_shape(user1, user2, radius_expansion=1.0):
+    """교집합 Shapely geometry 반환 (교집합 없으면 None)"""
+    x1, y1 = latlon_to_utm(user1['lat'], user1['lng'])
+    x2, y2 = latlon_to_utm(user2['lat'], user2['lng'])
+    r1 = user1['radius'] * radius_expansion
+    r2 = user2['radius'] * radius_expansion
+    shape = Point(x1, y1).buffer(r1).intersection(Point(x2, y2).buffer(r2))
+    return None if shape.is_empty else shape
+
+
+def is_within_intersection(lat, lng, shape):
+    """좌표가 교집합 내부에 있는지 확인"""
+    x, y = latlon_to_utm(lat, lng)
+    return shape.contains(Point(x, y))

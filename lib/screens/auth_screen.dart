@@ -103,7 +103,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 12),
                 Text(
                   _error!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                  style: const TextStyle(color: AppTheme.error, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
               ],

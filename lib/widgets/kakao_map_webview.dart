@@ -5,14 +5,14 @@ class KakaoMapWebView extends StatefulWidget {
   final String kakaoApiKey;
   final Function(double lat, double lng) onCenterChanged;
   final Function(double lat, double lng, double radius) onCircleDrawn;
-  final Map<String, dynamic>? partnerCircle;
+  final VoidCallback? onMapReady;
 
   const KakaoMapWebView({
     super.key,
     required this.kakaoApiKey,
     required this.onCenterChanged,
     required this.onCircleDrawn,
-    this.partnerCircle,
+    this.onMapReady,
   });
 
   @override
@@ -47,33 +47,34 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
         'Console',
         onMessageReceived: (msg) => debugPrint('JS: ${msg.message}'),
       )
+      ..addJavaScriptChannel(
+        'MapReadyChannel',
+        onMessageReceived: (_) => widget.onMapReady?.call(),
+      )
       ..loadHtmlString(_buildHtml());
   }
 
-  @override
-  void didUpdateWidget(KakaoMapWebView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.partnerCircle != null &&
-        widget.partnerCircle != oldWidget.partnerCircle) {
-      final p = widget.partnerCircle!;
-      updatePartnerCircle(
-        (p['lat'] as num).toDouble(),
-        (p['lng'] as num).toDouble(),
-        (p['radius'] as num).toDouble(),
-        p['userName'] ?? '상대방',
-      );
-    }
-  }
-
   void updateMyCircle(double lat, double lng, double radius, String userName) {
+    final encName = Uri.encodeComponent(userName);
     _controller.runJavaScript(
-        'updateMyCircle($lat, $lng, $radius, "$userName")');
+        'updateMyCircle($lat, $lng, $radius, decodeURIComponent("$encName"))');
   }
 
   void updatePartnerCircle(
-      double lat, double lng, double radius, String userName) {
+    String partnerId,
+    double lat,
+    double lng,
+    double radius,
+    String userName,
+    String color,
+  ) {
+    final encName = Uri.encodeComponent(userName);
     _controller.runJavaScript(
-        'updatePartnerCircle($lat, $lng, $radius, "$userName")');
+        'updatePartnerCircle("$partnerId", $lat, $lng, $radius, decodeURIComponent("$encName"), "$color")');
+  }
+
+  void clearPartnerCircle(String partnerId) {
+    _controller.runJavaScript('clearPartnerCircle("$partnerId")');
   }
 
   void setDrawMode(bool isDrawMode) {
@@ -82,16 +83,16 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
   }
 
   void addMessage(String userId, String userName, String message) {
-    // 특수문자 이스케이프
-    final escaped = message.replaceAll("'", "\\'").replaceAll('"', '\\"');
-    _controller
-        .runJavaScript('addMessage("$userId", "$userName", "$escaped")');
+    final encName = Uri.encodeComponent(userName);
+    final encMsg  = Uri.encodeComponent(message);
+    _controller.runJavaScript(
+        'addMessage("$userId", decodeURIComponent("$encName"), decodeURIComponent("$encMsg"))');
   }
 
   String _buildHtml() {
     return '''
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -99,7 +100,7 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
   <style>
     * {
       margin: 0; padding: 0; box-sizing: border-box;
-      font-family: "Noto Sans KR", sans-serif;
+      font-family: "Noto Sans KR", -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
       user-select: none;
@@ -118,7 +119,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       pointer-events: none; z-index: 20;
     }
 
-    /* 말풍선 묶음 */
     .bubble-wrap {
       position: absolute;
       display: flex;
@@ -130,7 +130,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       padding-bottom: 6px;
     }
     .bubble {
-      background: rgba(108,99,255,0.85);
       color: white;
       padding: 5px 10px;
       border-radius: 12px;
@@ -140,7 +139,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .bubble.partner { background: rgba(255,101,132,0.85); }
     .name-tag {
       background: rgba(0,0,0,0.5);
       color: white;
@@ -149,7 +147,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       font-size: 11px;
     }
 
-    /* 방향 핀 */
     .direction-pin {
       position: absolute;
       width: 48px;
@@ -196,7 +193,7 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
 
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${widget.kakaoApiKey}"></script>
   <script>
-    var map, myCircle, partnerCircle;
+    var map, myCircle;
     var isDrawMode = false;
     var isDrawing = false;
     var drawnPoints = [];
@@ -204,13 +201,16 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
     var ctx = canvas.getContext('2d');
     var overlayContainer = document.getElementById('overlay-container');
 
+    // circles.my + circles.partners[partnerId]
     var circles = {
-      my:      { lat: null, lng: null, radius: null, userName: '', messages: [] },
-      partner: { lat: null, lng: null, radius: null, userName: '', messages: [] }
+      my: { lat: null, lng: null, radius: null, userName: '', color: '#6C63FF', messages: [] },
+      partners: {}
     };
+    // kakao.maps.Circle instances keyed by partnerId
+    var partnerCircleObjects = {};
 
     kakao.maps.load(function() {
-      Console.postMessage('카카오맵 로드됨');
+      Console.postMessage('kakao maps ready');
 
       canvas.width  = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -234,9 +234,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       kakao.maps.event.addListener(map, 'center_changed', updateAllOverlays);
       kakao.maps.event.addListener(map, 'zoom_changed',   updateAllOverlays);
 
-      // ── 그리기 이벤트 ──
-      var mapDiv = document.getElementById('map');
-
       canvas.addEventListener('touchstart', function(e) {
         if (!isDrawMode) return;
         e.preventDefault();
@@ -248,23 +245,23 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
         var t = e.touches[0];
-        var rect = canvas.getBoundingClientRect();          // ← 추가
-        var x = t.clientX - rect.left;                     // ← 수정
-        var y = t.clientY - rect.top;                      // ← 수정
+        var rect = canvas.getBoundingClientRect();
+        var x = t.clientX - rect.left;
+        var y = t.clientY - rect.top;
         ctx.moveTo(x, y);
-        drawnPoints.push({ x: x, y: y });                  // ← 수정
+        drawnPoints.push({ x: x, y: y });
       }, { passive: false });
 
       canvas.addEventListener('touchmove', function(e) {
         if (!isDrawMode || !isDrawing) return;
         e.preventDefault();
         var t = e.touches[0];
-        var rect = canvas.getBoundingClientRect();          // ← 추가
-        var x = t.clientX - rect.left;                     // ← 수정
-        var y = t.clientY - rect.top;                      // ← 수정
+        var rect = canvas.getBoundingClientRect();
+        var x = t.clientX - rect.left;
+        var y = t.clientY - rect.top;
         ctx.lineTo(x, y);
         ctx.stroke();
-        drawnPoints.push({ x: x, y: y });                  // ← 수정
+        drawnPoints.push({ x: x, y: y });
       }, { passive: false });
 
       canvas.addEventListener('touchend', function(e) {
@@ -272,20 +269,17 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
         isDrawing = false;
         if (drawnPoints.length < 5) return;
 
-        // 무게중심
         var cx = 0, cy = 0;
         drawnPoints.forEach(function(p) { cx += p.x; cy += p.y; });
         cx /= drawnPoints.length;
         cy /= drawnPoints.length;
 
-        // 평균 반경
         var avgR = 0;
         drawnPoints.forEach(function(p) {
           avgR += Math.sqrt((p.x-cx)*(p.x-cx)+(p.y-cy)*(p.y-cy));
         });
         avgR /= drawnPoints.length;
 
-        // 보정 원 미리보기
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.beginPath();
         ctx.arc(cx, cy, avgR, 0, 2*Math.PI);
@@ -310,7 +304,7 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
           var radiusMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
           radiusMeters = Math.max(500, Math.min(20000, radiusMeters));
 
-          Console.postMessage('원 그리기 완료: ' + radiusMeters + 'm');
+          Console.postMessage('circle drawn: ' + radiusMeters + 'm');
 
           myCircle.setPosition(centerLatLng);
           myCircle.setRadius(radiusMeters);
@@ -323,19 +317,39 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       }, { passive: false });
 
       document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+      MapReadyChannel.postMessage('ready');
     });
 
-    // ── 오버레이 전체 업데이트 ──
+    function hexToRgba(hex, alpha) {
+      var r = parseInt(hex.slice(1,3), 16);
+      var g = parseInt(hex.slice(3,5), 16);
+      var b = parseInt(hex.slice(5,7), 16);
+      return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+    }
+
     function updateAllOverlays() {
       overlayContainer.innerHTML = '';
-      ['my', 'partner'].forEach(function(key) {
-        var c = circles[key];
+
+      // 내 원
+      if (circles.my.lat !== null) {
+        var screenPos = getScreenPos(circles.my.lat, circles.my.lng);
+        if (isOnScreen(screenPos)) {
+          renderBubbles(circles.my, screenPos);
+        } else {
+          renderDirectionPin(circles.my, circles.my.lat, circles.my.lng);
+        }
+      }
+
+      // 파트너 원들
+      Object.keys(circles.partners).forEach(function(pid) {
+        var c = circles.partners[pid];
         if (c.lat === null) return;
         var screenPos = getScreenPos(c.lat, c.lng);
         if (isOnScreen(screenPos)) {
-          renderBubbles(key, screenPos);
+          renderBubbles(c, screenPos);
         } else {
-          renderDirectionPin(key, c.lat, c.lng);
+          renderDirectionPin(c, c.lat, c.lng);
         }
       });
     }
@@ -352,64 +366,53 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
              pos.y > -m && pos.y < window.innerHeight + m;
     }
 
-    // 말풍선 렌더
-    function renderBubbles(key, screenPos) {
-      var c    = circles[key];
-      var isMe = key === 'my';
+    function renderBubbles(circleData, screenPos) {
       var wrap = document.createElement('div');
       wrap.className = 'bubble-wrap';
       wrap.style.left = screenPos.x + 'px';
       wrap.style.top  = (screenPos.y - 20) + 'px';
-    
-      // 이름 태그 (맨 아래)
+
       var nameTag = document.createElement('div');
       nameTag.className = 'name-tag';
-      nameTag.innerText = c.userName;
+      nameTag.innerText = circleData.userName;
       wrap.appendChild(nameTag);
-    
-      // 최대 4개 — 최신이 이름 바로 위, 오래된 것이 위로
-      var msgs = c.messages.slice(-4);
+
+      var msgs = circleData.messages.slice(-4);
       msgs.forEach(function(msg, i) {
-        // i=0 이 제일 오래된 것 → 위에, i=last 가 최신 → 이름 바로 위
         var opacity = msgs.length === 1 ? 1.0 : 0.25 + (i / (msgs.length - 1)) * 0.75;
         var bubble  = document.createElement('div');
-        bubble.className = 'bubble' + (isMe ? '' : ' partner');
+        bubble.className = 'bubble';
+        bubble.style.background = hexToRgba(circleData.color, 0.85);
         bubble.style.opacity = opacity;
         bubble.innerText = msg;
-        // nameTag 앞에 삽입 → 위로 쌓임
         wrap.insertBefore(bubble, nameTag);
       });
-    
+
       overlayContainer.appendChild(wrap);
     }
 
-    // 방향 핀 렌더
-    function renderDirectionPin(key, lat, lng) {
-      var c     = circles[key];
-      var isMe  = key === 'my';
-      var color = isMe ? '#6C63FF' : '#FF6584';
-      var edge  = getEdgePosition(getScreenPos(lat, lng));
+    function renderDirectionPin(circleData, lat, lng) {
+      var edge = getEdgePosition(getScreenPos(lat, lng));
 
       var pin = document.createElement('div');
       pin.className  = 'direction-pin';
-      pin.style.background = color;
+      pin.style.background = circleData.color;
       pin.style.left = edge.x + 'px';
       pin.style.top  = edge.y + 'px';
 
       var initial = document.createElement('span');
-      initial.innerText = c.userName ? c.userName[0] : '?';
+      initial.innerText = circleData.userName ? circleData.userName[0] : '?';
       pin.appendChild(initial);
 
       var nameEl = document.createElement('div');
       nameEl.className = 'pin-name';
-      nameEl.innerText = c.userName;
+      nameEl.innerText = circleData.userName;
       pin.appendChild(nameEl);
 
-      // 최근 메시지
-      if (c.messages.length > 0) {
+      if (circleData.messages.length > 0) {
         var msgEl = document.createElement('div');
         msgEl.className = 'pin-msg';
-        msgEl.innerText = c.messages[c.messages.length - 1];
+        msgEl.innerText = circleData.messages[circleData.messages.length - 1];
         pin.appendChild(msgEl);
       }
 
@@ -420,7 +423,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       overlayContainer.appendChild(pin);
     }
 
-    // 화면 가장자리 좌표
     function getEdgePosition(screenPos) {
       var W  = window.innerWidth;
       var H  = window.innerHeight;
@@ -436,7 +438,6 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       return { x: tx, y: ty };
     }
 
-    // ── Flutter → JS 함수 ──
     function updateMyCircle(lat, lng, radius, userName) {
       circles.my.lat      = lat;
       circles.my.lng      = lng;
@@ -448,23 +449,38 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       updateAllOverlays();
     }
 
-    function updatePartnerCircle(lat, lng, radius, userName) {
-      circles.partner.lat      = lat;
-      circles.partner.lng      = lng;
-      circles.partner.radius   = radius;
-      circles.partner.userName = userName;
-      if (partnerCircle) {
-        partnerCircle.setPosition(new kakao.maps.LatLng(lat, lng));
-        partnerCircle.setRadius(radius);
+    function clearPartnerCircle(partnerId) {
+      if (partnerCircleObjects[partnerId]) {
+        partnerCircleObjects[partnerId].setMap(null);
+        delete partnerCircleObjects[partnerId];
+      }
+      delete circles.partners[partnerId];
+      updateAllOverlays();
+    }
+
+    function updatePartnerCircle(partnerId, lat, lng, radius, userName, color) {
+      if (!circles.partners[partnerId]) {
+        circles.partners[partnerId] = { lat: null, lng: null, radius: null, userName: '', color: color, messages: [] };
+      }
+      var c = circles.partners[partnerId];
+      c.lat      = lat;
+      c.lng      = lng;
+      c.radius   = radius;
+      c.userName = userName;
+      c.color    = color;
+
+      if (partnerCircleObjects[partnerId]) {
+        partnerCircleObjects[partnerId].setPosition(new kakao.maps.LatLng(lat, lng));
+        partnerCircleObjects[partnerId].setRadius(radius);
       } else {
-        partnerCircle = new kakao.maps.Circle({
+        partnerCircleObjects[partnerId] = new kakao.maps.Circle({
           map: map,
           center: new kakao.maps.LatLng(lat, lng),
           radius: radius,
           strokeWeight: 2,
-          strokeColor: '#FF6584',
+          strokeColor: color,
           strokeOpacity: 0.8,
-          fillColor: '#FF6584',
+          fillColor: color,
           fillOpacity: 0.2
         });
       }
@@ -472,14 +488,33 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
     }
 
     function addMessage(userId, userName, message) {
-      var key = (circles.my.userName === userName) ? 'my' : 'partner';
-      circles[key].messages.push(message);
-      if (circles[key].messages.length > 4) circles[key].messages.shift();
+      var circleData = null;
+
+      if (circles.my.userName === userName) {
+        circleData = circles.my;
+      } else {
+        // 파트너 중에서 userName으로 탐색 (userId가 partners 키와 다를 수 있으므로)
+        var keys = Object.keys(circles.partners);
+        for (var i = 0; i < keys.length; i++) {
+          if (circles.partners[keys[i]].userName === userName) {
+            circleData = circles.partners[keys[i]];
+            break;
+          }
+        }
+        // userName 불일치 시 userId로 재탐색
+        if (!circleData && circles.partners[userId]) {
+          circleData = circles.partners[userId];
+        }
+      }
+
+      if (!circleData) return;
+
+      circleData.messages.push(message);
+      if (circleData.messages.length > 4) circleData.messages.shift();
       updateAllOverlays();
-    
-      // 5초 후 가장 오래된 메시지 삭제
+
       setTimeout(function() {
-        circles[key].messages.shift();
+        circleData.messages.shift();
         updateAllOverlays();
       }, 5000);
     }
@@ -488,7 +523,7 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
       isDrawMode = enabled;
       canvas.className = enabled ? 'draw-mode' : '';
       if (!enabled) ctx.clearRect(0, 0, canvas.width, canvas.height);
-      Console.postMessage('드로우모드: ' + enabled + ' / canvas class: ' + canvas.className);
+      Console.postMessage('drawMode: ' + enabled + ' / class: ' + canvas.className);
     }
   </script>
 </body>

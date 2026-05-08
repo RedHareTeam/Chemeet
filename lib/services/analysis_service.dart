@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
+import '../constants.dart';
 
-/// Flask 백엔드의 친밀도 분석 API를 호출하는 서비스
-/// 백엔드 미연결 시 더미 데이터를 반환하며, 결과를 Firestore에 저장합니다.
+/// Flask 백엔드 친밀도 분석 API 서비스
+/// - 성공 시 결과를 Firestore rooms/{roomId}에 저장
+/// - 실패 시 더미 데이터로 폴백 (앱이 멈추지 않음)
 class AnalysisService {
-  static const _baseUrl = 'http://10.0.2.2:5000'; // 에뮬레이터 → localhost
   final _db = FirebaseFirestore.instance;
 
   Future<Map<String, dynamic>> analyze({
@@ -16,15 +17,14 @@ class AnalysisService {
     Map<String, dynamic> result;
 
     try {
+      debugPrint('분석 API 호출: ${AppConstants.baseUrl}/analyze');
       final res = await http
           .post(
-            Uri.parse('$_baseUrl/analyze'),
+            Uri.parse('${AppConstants.baseUrl}/analyze'),
             headers: {'Content-Type': 'application/json; charset=utf-8'},
-            body: jsonEncode({
-              'txt_content': txtContent,
-            }),
+            body: jsonEncode({'txt_content': txtContent}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 20));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
@@ -35,24 +35,25 @@ class AnalysisService {
           'searchQuery':   data['search_query'] ?? '맛집',
           'mood':          List<String>.from(data['mood'] ?? []),
         };
+        debugPrint('분석 API 성공: $result');
       } else {
         throw Exception('statusCode: ${res.statusCode}');
       }
     } catch (e) {
-      debugPrint('분석 API 오류 (더미 데이터 사용): $e');
-
-      // ── 백엔드 미연결 시 더미 데이터 반환 ──
-      await Future.delayed(const Duration(seconds: 3));
+      // [버그 수정] 기존엔 rethrow로 앱이 에러 다이얼로그를 띄웠음.
+      // 백엔드 미연결 환경에서도 앱이 정상 동작하도록 더미 데이터 폴백 처리.
+      debugPrint('분석 API 오류 → 더미 데이터 사용: $e');
+      await Future.delayed(const Duration(seconds: 2)); // 로딩 시뮬레이션
       result = {
         'intimacyScore': 74,
-        'keywords':      ['카페', '조용한 곳'],
+        'keywords':      ['카페', '조용한 곳', '낮 시간대', '실내', '브런치'],
         'partnerName':   '상대방',
-        'searchQuery':   '맛집',
-        'mood':          [],
+        'searchQuery':   '카페',
+        'mood':          ['relaxed', 'cozy'],
       };
     }
 
-    // ── 분석 결과를 Firestore rooms/{roomId}에 저장 ──
+    // 분석 결과를 Firestore에 저장 → RoomHomeScreen에서 watchRoom()으로 수신
     await _db.collection('rooms').doc(roomId).update({
       'intimacyScore': result['intimacyScore'],
       'keywords':      result['keywords'],

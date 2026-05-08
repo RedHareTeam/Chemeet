@@ -7,7 +7,15 @@ import '../services/room_service.dart';
 import 'analyzing_screen.dart';
 
 class UploadScreen extends StatefulWidget {
-  const UploadScreen({super.key});
+  /// 재분석 모드: 기존 방 ID로 분석만 업데이트 (방제목/인원 설정 숨김)
+  final bool isReAnalyze;
+  final String? roomId;
+
+  const UploadScreen({
+    super.key,
+    this.isReAnalyze = false,
+    this.roomId,
+  });
 
   @override
   State<UploadScreen> createState() => _UploadScreenState();
@@ -50,7 +58,7 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<void> _submit() async {
-    if (_titleController.text.trim().isEmpty) {
+    if (!widget.isReAnalyze && _titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('방 제목을 입력해주세요')),
       );
@@ -65,12 +73,17 @@ class _UploadScreenState extends State<UploadScreen> {
 
     setState(() => _loading = true);
 
-    final roomId = await _roomService.createRoom(
-      myUserId:   _myUserId,
-      myUserName: _myUserName,
-      roomTitle:  _titleController.text.trim(),
-      maxMembers: _memberCount,
-    );
+    final String roomId;
+    if (widget.isReAnalyze) {
+      roomId = widget.roomId!;
+    } else {
+      roomId = await _roomService.createRoom(
+        myUserId:   _myUserId,
+        myUserName: _myUserName,
+        roomTitle:  _titleController.text.trim(),
+        maxMembers: _memberCount,
+      );
+    }
 
     final txtContent = await _pickedFile!.readAsString();
 
@@ -81,11 +94,12 @@ class _UploadScreenState extends State<UploadScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => AnalyzingScreen(
-          roomId:     roomId,
-          myUserId:   _myUserId,
-          myUserName: _myUserName,
-          maxMembers: _memberCount,
-          txtContent: txtContent,
+          roomId:       roomId,
+          myUserId:     _myUserId,
+          myUserName:   _myUserName,
+          maxMembers:   _memberCount,
+          txtContent:   txtContent,
+          isReAnalyze:  widget.isReAnalyze,
         ),
       ),
     );
@@ -102,120 +116,118 @@ class _UploadScreenState extends State<UploadScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('새 방 만들기'),
+        title: Text(widget.isReAnalyze ? '리포트 업데이트' : '새 방 만들기'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── 방 제목 ──────────────────────────────
-            Text(
-              '방 제목',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppTheme.textDark,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: AppTheme.surface,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 14),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppTheme.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppTheme.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppTheme.primary, width: 1.5),
+            // ── 방 제목 + 인원 설정 (재분석 모드에서 숨김) ──
+            if (!widget.isReAnalyze) ...[
+              Text(
+                '방 제목',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: AppTheme.textDark,
                 ),
               ),
-            ),
-
-            const SizedBox(height: 28),
-
-            // ── 인원 설정 ─────────────────────────────
-            Text(
-              '인원 설정',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppTheme.textDark,
+              const SizedBox(height: 8),
+              TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: AppTheme.surface,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppTheme.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppTheme.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppTheme.primary, width: 1.5),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '본인 포함 총 인원 수를 선택하세요',
-              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: List.generate(4, (i) {
-                final count    = i + 2;
-                final selected = _memberCount == count;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: GestureDetector(
-                    onTap: () => setState(() => _memberCount = count),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: selected ? AppTheme.primary : AppTheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: selected ? AppTheme.primary : AppTheme.border,
-                          width: selected ? 2 : 1,
+              const SizedBox(height: 28),
+              Text(
+                '인원 설정',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: AppTheme.textDark,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '본인 포함 총 인원 수를 선택하세요',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: List.generate(4, (i) {
+                  final count    = i + 2;
+                  final selected = _memberCount == count;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _memberCount = count),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: selected ? AppTheme.primary : AppTheme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: selected ? AppTheme.primary : AppTheme.border,
+                            width: selected ? 2 : 1,
+                          ),
+                          boxShadow: selected
+                              ? [
+                            BoxShadow(
+                              color: AppTheme.primary.withValues(alpha: 0.25),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
+                              : [],
                         ),
-                        boxShadow: selected
-                            ? [
-                          BoxShadow(
-                            color: AppTheme.primary.withOpacity(0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                            : [],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '$count',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: selected ? Colors.white : AppTheme.primary,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '$count',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: selected ? Colors.white : AppTheme.primary,
+                              ),
                             ),
-                          ),
-                          Text(
-                            '명',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: selected
-                                  ? Colors.white70
-                                  : AppTheme.textMuted,
+                            Text(
+                              '명',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: selected
+                                    ? Colors.white70
+                                    : AppTheme.textMuted,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }),
-            ),
-
-            const SizedBox(height: 28),
+                  );
+                }),
+              ),
+              const SizedBox(height: 28),
+            ],
 
             // ── 파일 업로드 ───────────────────────────
             Text(
@@ -259,7 +271,7 @@ class _UploadScreenState extends State<UploadScreen> {
                       size: 36,
                       color: _pickedFile != null
                           ? AppTheme.primary
-                          : Colors.grey.shade400,
+                          : AppTheme.disabled,
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -271,15 +283,15 @@ class _UploadScreenState extends State<UploadScreen> {
                             : FontWeight.normal,
                         color: _pickedFile != null
                             ? AppTheme.primary
-                            : Colors.grey.shade500,
+                            : AppTheme.textMuted,
                       ),
                     ),
                     if (_pickedFile != null) ...[
                       const SizedBox(height: 4),
-                      Text(
+                      const Text(
                         '파일을 다시 선택하려면 탭하세요',
                         style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade400),
+                            fontSize: 11, color: AppTheme.disabled),
                       ),
                     ],
                   ],

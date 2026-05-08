@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'package:chemeet/app_theme.dart';
+import 'package:chemeet/screens/heatmap_screen.dart';
 import 'package:chemeet/screens/place_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/auth_service.dart';
 import '../services/room_service.dart';
 import 'date_setting_screen.dart';
 import 'map_screen.dart';
+import 'upload_screen.dart';
 
 class RoomHomeScreen extends StatefulWidget {
   final String roomId;
   final String myUserId;
   final String myUserName;
-  final int    maxMembers;
+  final int maxMembers;
 
   const RoomHomeScreen({
     super.key,
@@ -27,20 +31,21 @@ class RoomHomeScreen extends StatefulWidget {
 class _RoomHomeScreenState extends State<RoomHomeScreen>
     with SingleTickerProviderStateMixin {
   final _roomService = RoomService();
+  final _authService = AuthService();
 
   late AnimationController _scoreAnim;
-  late Animation<int>      _scoreCounter;
+  late Animation<int> _scoreCounter;
 
   List<Map<String, dynamic>> _schedules = [];
-  StreamSubscription?        _scheduleSub;
-  Map<String, dynamic>?      _roomData;
-  StreamSubscription?        _roomSub;
+  StreamSubscription? _scheduleSub;
+  Map<String, dynamic>? _roomData;
+  StreamSubscription? _roomSub;
 
   // Firestore에서 읽어온 분석 데이터
-  int           _intimacyScore = 0;
-  List<String>  _keywords      = [];
-  String        _partnerName   = '';
-  bool          _analysisReady = false;
+  int _intimacyScore = 0;
+  List<String> _keywords = [];
+  String _partnerName = '';
+  bool _analysisReady = false;
 
   @override
   void initState() {
@@ -51,9 +56,10 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
       duration: const Duration(milliseconds: 1500),
     );
     // 초기엔 0→0, 데이터 로드 후 재설정
-    _scoreCounter = IntTween(begin: 0, end: 0).animate(
-      CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut),
-    );
+    _scoreCounter = IntTween(
+      begin: 0,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
 
     _watchRoom();
     _watchSchedules();
@@ -63,57 +69,57 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     _roomSub = _roomService.watchRoom(widget.roomId).listen((room) {
       if (room == null) return;
 
-      final newScore       = (room['intimacyScore'] as num?)?.toInt() ?? 0;
-      final newKeywords    = List<String>.from(room['keywords'] ?? []);
+      final newScore = (room['intimacyScore'] as num?)?.toInt() ?? 0;
+      final newKeywords = List<String>.from(room['keywords'] ?? []);
       final newPartnerName = room['partnerName'] as String? ?? '';
 
       // 분석 데이터가 새로 들어왔을 때만 애니메이션 재실행
       if (newScore != _intimacyScore || !_analysisReady) {
         _scoreAnim.reset();
-        _scoreCounter = IntTween(begin: 0, end: newScore).animate(
-          CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut),
-        );
+        _scoreCounter = IntTween(
+          begin: 0,
+          end: newScore,
+        ).animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
         Future.delayed(const Duration(milliseconds: 400), () {
           if (mounted) _scoreAnim.forward();
         });
       }
 
       setState(() {
-        _roomData      = room;
+        _roomData = room;
         _intimacyScore = newScore;
-        _keywords      = newKeywords;
-        _partnerName   = newPartnerName;
+        _keywords = newKeywords;
+        _partnerName = newPartnerName;
         _analysisReady = newScore > 0 || newKeywords.isNotEmpty;
       });
     });
   }
 
   void _watchSchedules() {
-    _scheduleSub =
-        _roomService.watchHistory(widget.roomId).listen((history) {
-          final now = DateTime.now();
-          final upcoming = history.where((h) {
-            final dateTs = h['appointmentDate'];
-            if (dateTs == null) return false;
-            final date = (dateTs as dynamic).toDate() as DateTime;
-            return date.isAfter(now);
-          }).toList();
+    _scheduleSub = _roomService.watchHistory(widget.roomId).listen((history) {
+      final now = DateTime.now();
+      final upcoming = history.where((h) {
+        final dateTs = h['appointmentDate'];
+        if (dateTs == null) return false;
+        final date = (dateTs as dynamic).toDate() as DateTime;
+        return date.isAfter(now);
+      }).toList();
 
-          upcoming.sort((a, b) {
-            final da = (a['appointmentDate'] as dynamic).toDate() as DateTime;
-            final db = (b['appointmentDate'] as dynamic).toDate() as DateTime;
-            return da.compareTo(db);
-          });
+      upcoming.sort((a, b) {
+        final da = (a['appointmentDate'] as dynamic).toDate() as DateTime;
+        final db = (b['appointmentDate'] as dynamic).toDate() as DateTime;
+        return da.compareTo(db);
+      });
 
-          setState(() => _schedules = upcoming.cast<Map<String, dynamic>>());
-        });
+      setState(() => _schedules = upcoming.cast<Map<String, dynamic>>());
+    });
   }
 
   Color _intimacyColor(int score) {
     if (score >= 80) return AppTheme.primary;
-    if (score >= 60) return const Color(0xFF4ECDC4);
-    if (score >= 40) return const Color(0xFFFFBE0B);
-    return const Color(0xFFFF6584);
+    if (score >= 60) return AppTheme.drawing;
+    if (score >= 40) return AppTheme.accent;
+    return AppTheme.intimacyLow;
   }
 
   String _intimacyLabel(int score) {
@@ -128,6 +134,135 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     return days[(wd - 1) % 7];
   }
 
+  void _showRoomMenu() {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+              child: Text(
+                '메뉴',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textDark,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const Divider(height: 1),
+            InkWell(
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        UploadScreen(isReAnalyze: true, roomId: widget.roomId),
+                  ),
+                );
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.refresh_rounded,
+                      color: AppTheme.primary,
+                      size: 22,
+                    ),
+                    SizedBox(width: 14),
+                    Text(
+                      '리포트 업데이트',
+                      style: TextStyle(fontSize: 15, color: AppTheme.textDark),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            InkWell(
+              onTap: () {
+                Navigator.pop(context);
+                _confirmLeave();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_rounded, color: AppTheme.error, size: 22),
+                    const SizedBox(width: 14),
+                    Text(
+                      '방 나가기',
+                      style: TextStyle(fontSize: 15, color: AppTheme.error),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.border),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  '취소',
+                  style: TextStyle(fontSize: 14, color: AppTheme.textMuted),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmLeave() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => _SimpleDialog(
+        title: '방 나가기',
+        content:
+            '방을 나가면 다시 초대 코드로 입장해야 해요.\n지도/투표 진행 중이라면 내용이 초기화됩니다.\n\n정말 나가시겠어요?',
+        actions: [
+          _DialogAction(
+            label: '취소',
+            onTap: () => Navigator.pop(context, false),
+          ),
+          _DialogAction(
+            label: '나가기',
+            primary: true,
+            destructive: true,
+            onTap: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    await _roomService.leaveRoom(
+      roomId: widget.roomId,
+      userId: widget.myUserId,
+    );
+
+    if (mounted) Navigator.pop(context);
+  }
+
   @override
   void dispose() {
     _scoreAnim.dispose();
@@ -138,9 +273,11 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final inviteCode     = _roomData?['inviteCode'] ?? '';
-    final currentMembers = List<String>.from(_roomData?['members'] ?? [widget.myUserId]);
-    final isFull         = currentMembers.length >= widget.maxMembers;
+    final inviteCode = _roomData?['inviteCode'] ?? '';
+    final currentMembers = List<String>.from(
+      _roomData?['members'] ?? [widget.myUserId],
+    );
+    final isFull = currentMembers.length >= widget.maxMembers;
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -148,44 +285,44 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         title: Text(_roomData?['roomTitle'] ?? 'Chemeet'),
         actions: [
           if (inviteCode.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: GestureDetector(
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('초대 코드: $inviteCode'),
-                        action: SnackBarAction(label: '복사', onPressed: () {}),
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: inviteCode));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('초대 코드 $inviteCode 복사됨')),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.tag, size: 14, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(
+                      inviteCode,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
                       ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.tag, size: 14, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text(
-                          inviteCode,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  ],
                 ),
               ),
             ),
+          IconButton(
+            icon: const Icon(Icons.more_horiz_rounded),
+            onPressed: _showRoomMenu,
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -193,86 +330,101 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             // ─── 참여 인원 현황 ───────────────────────────
-            Builder(builder: (_) {
-              final memberNames = Map<String, dynamic>.from(
-                  _roomData?['memberNames'] ?? {});
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: isFull ? AppTheme.primaryBg : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isFull
-                        ? AppTheme.primary.withOpacity(0.3)
-                        : Colors.orange.shade200,
+            Builder(
+              builder: (_) {
+                final memberNames = Map<String, dynamic>.from(
+                  _roomData?['memberNames'] ?? {},
+                );
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          isFull ? Icons.group : Icons.group_outlined,
-                          color: isFull
-                              ? AppTheme.primary
-                              : Colors.orange.shade600,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          isFull
-                              ? '${currentMembers.length}/${widget.maxMembers}명 모두 참여했어요!'
-                              : '${currentMembers.length}/${widget.maxMembers}명 참여 중 · 초대 코드로 친구를 초대하세요',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: isFull
-                                ? AppTheme.primary
-                                : Colors.orange.shade700,
+                  decoration: BoxDecoration(
+                    color: isFull ? AppTheme.primaryBg : AppTheme.accentBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isFull
+                          ? AppTheme.primary.withValues(alpha: 0.3)
+                          : AppTheme.accent.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            isFull ? Icons.group : Icons.group_outlined,
+                            color: isFull ? AppTheme.primary : AppTheme.accent,
+                            size: 20,
                           ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isFull
+                                ? '${currentMembers.length}/${widget.maxMembers}명 모두 참여했어요!'
+                                : '${currentMembers.length}/${widget.maxMembers}명 참여 중 · 초대 코드로 친구를 초대하세요',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: isFull
+                                  ? AppTheme.primary
+                                  : AppTheme.accent,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (currentMembers.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children:
+                              ([
+                                widget.myUserId,
+                                ...currentMembers.where(
+                                  (uid) => uid != widget.myUserId,
+                                ),
+                              ]).map((uid) {
+                                final name = memberNames[uid] as String? ?? uid;
+                                final isMe = uid == widget.myUserId;
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isMe
+                                        ? AppTheme.primary
+                                        : AppTheme.surface,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: isMe
+                                          ? AppTheme.primary
+                                          : AppTheme.border,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    isMe ? '$name (나)' : name,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: isMe
+                                          ? Colors.white
+                                          : AppTheme.textDark,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                         ),
                       ],
-                    ),
-                    if (currentMembers.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: ([widget.myUserId,
-                          ...currentMembers.where((uid) => uid != widget.myUserId),
-                        ]).map((uid) {
-                          final name = memberNames[uid] as String? ?? uid;
-                          final isMe = uid == widget.myUserId;
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isMe ? AppTheme.primary : AppTheme.surface,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isMe ? AppTheme.primary : AppTheme.border,
-                              ),
-                            ),
-                            child: Text(
-                              isMe ? '$name (나)' : name,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: isMe ? Colors.white : AppTheme.textDark,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
                     ],
-                  ],
-                ),
-              );
-            }),
+                  ),
+                );
+              },
+            ),
 
             const SizedBox(height: 20),
 
@@ -285,7 +437,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -299,133 +451,210 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
             const SizedBox(height: 24),
 
             // ─── 메인 액션 버튼 (상태별) ─────────────────
-            Builder(builder: (_) {
-              final status  = _roomData?['status'] ?? 'idle';
-              final members = List<String>.from(_roomData?['members'] ?? []);
+            Builder(
+              builder: (_) {
+                final status = _roomData?['status'] ?? 'idle';
+                final members = List<String>.from(_roomData?['members'] ?? []);
 
-              String       label;
-              IconData     icon;
-              Color        color;
-              bool         enabled;
-              VoidCallback? onTap;
+                String label;
+                IconData icon;
+                Color color;
+                bool enabled;
+                VoidCallback? onTap;
 
-              if (status == 'voting') {
-                label   = '장소 투표 진행 중 · 참여하기';
-                icon    = Icons.how_to_vote_outlined;
-                color   = AppTheme.accent;
-                enabled = true;
-                onTap   = () {
-                  final places = List<Map<String, dynamic>>.from(
-                      _roomData?['places'] ?? []);
-                  Navigator.push(
+                if (status == 'voting') {
+                  label = '장소 투표 진행 중 · 참여하기';
+                  icon = Icons.how_to_vote_outlined;
+                  color = AppTheme.accent;
+                  enabled = true;
+                  onTap = () {
+                    final places = List<Map<String, dynamic>>.from(
+                      _roomData?['places'] ?? [],
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PlaceScreen(
+                          roomId: widget.roomId,
+                          userId: widget.myUserId,
+                          userName: widget.myUserName,
+                          members: members,
+                          places: places,
+                        ),
+                      ),
+                    );
+                  };
+                } else if (status == 'drawing' &&
+                    _roomData?['appointmentDate'] != null) {
+                  label = '약속을 정하는 중이에요 · 지도 보기';
+                  icon = Icons.map_outlined;
+                  color = AppTheme.drawing;
+                  enabled = true;
+                  onTap = () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => PlaceScreen(
-                        roomId:   widget.roomId,
-                        userId:   widget.myUserId,
-                        userName: widget.myUserName,
-                        members:  members,
-                        places:   places,
+                      builder: (_) => MapScreen(
+                        roomId: widget.roomId,
+                        myUserId: widget.myUserId,
+                        myUserName: widget.myUserName,
+                        members: members,
                       ),
                     ),
                   );
-                };
-              } else if (status == 'drawing' &&
-                  _roomData?['appointmentDate'] != null) {
-                label   = '약속을 정하는 중이에요 · 지도 보기';
-                icon    = Icons.map_outlined;
-                color   = const Color(0xFF4ECDC4);
-                enabled = true;
-                onTap   = () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MapScreen(
-                      roomId:     widget.roomId,
-                      myUserId:   widget.myUserId,
-                      myUserName: widget.myUserName,
-                      members:    members,
+                } else if (!isFull) {
+                  label =
+                      '${widget.maxMembers - members.length}명 더 참여해야 약속을 만들 수 있어요';
+                  icon = Icons.group_outlined;
+                  color = AppTheme.disabled;
+                  enabled = false;
+                  onTap = null;
+                } else {
+                  label = '약속 만들기';
+                  icon = Icons.add_circle_outline;
+                  color = AppTheme.primary;
+                  enabled = true;
+                  onTap = () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DateSettingScreen(
+                        roomId: widget.roomId,
+                        myUserId: widget.myUserId,
+                        myUserName: widget.myUserName,
+                        maxMembers: widget.maxMembers,
+                        members: currentMembers,
+                      ),
                     ),
-                  ),
-                );
-              } else if (!isFull) {
-                label   = '${widget.maxMembers - members.length}명 더 참여해야 약속을 만들 수 있어요';
-                icon    = Icons.group_outlined;
-                color   = Colors.grey;
-                enabled = false;
-                onTap   = null;
-              } else {
-                label   = '약속 만들기';
-                icon    = Icons.add_circle_outline;
-                color   = AppTheme.primary;
-                enabled = true;
-                onTap   = () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => DateSettingScreen(
-                      roomId:     widget.roomId,
-                      myUserId:   widget.myUserId,
-                      myUserName: widget.myUserName,
-                      maxMembers: widget.maxMembers,
-                      members:    currentMembers,
-                    ),
-                  ),
-                );
-              }
+                  );
+                }
 
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: enabled ? color : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: enabled
-                      ? [
-                    BoxShadow(
-                      color: color.withOpacity(0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    )
-                  ]
-                      : [],
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onTap,
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: enabled ? color : AppTheme.disabledBg,
                     borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(icon,
-                              color: enabled
-                                  ? Colors.white
-                                  : Colors.grey.shade400,
-                              size: 20),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              label,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: enabled
-                                    ? Colors.white
-                                    : Colors.grey.shade400,
+                    boxShadow: enabled
+                        ? [
+                            BoxShadow(
+                              color: color.withValues(alpha: 0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onTap,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              icon,
+                              color: enabled ? Colors.white : AppTheme.disabled,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                label,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: enabled
+                                      ? Colors.white
+                                      : AppTheme.disabled,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
 
             const SizedBox(height: 28),
+
+            // ─── 방문 히스토리 지도 ────────────────────────
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HeatmapScreen(
+                    roomId: widget.roomId,
+                    myUserId: widget.myUserId,
+                    myUserName: widget.myUserName,
+                  ),
+                ),
+              ),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryBg,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.map_rounded,
+                        color: AppTheme.primary,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '방문 히스토리 지도',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textDark,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          '다녀온 장소를 지도로 확인해요',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppTheme.border,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
 
             // ─── 다가오는 약속 ────────────────────────────
             Text(
@@ -449,15 +678,18 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                 ),
                 child: Column(
                   children: [
-                    Icon(Icons.calendar_today_outlined,
-                        size: 36, color: Colors.grey.shade300),
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 36,
+                      color: AppTheme.border,
+                    ),
                     const SizedBox(height: 10),
                     Text(
                       '아직 약속이 없어요\n위 버튼으로 첫 약속을 잡아보세요!',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.grey.shade400,
+                        color: AppTheme.textMuted,
                         height: 1.6,
                       ),
                     ),
@@ -466,12 +698,14 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
               )
             else
               ...List.generate(_schedules.length, (i) {
-                final s       = _schedules[i];
-                final place   = Map<String, dynamic>.from(
-                    s['confirmedPlace'] as Map? ?? {});
-                final dateTs  = s['appointmentDate'];
-                final date    = (dateTs as dynamic).toDate() as DateTime;
-                final isNext  = i == 0;
+                final s = _schedules[i];
+                final place = Map<String, dynamic>.from(
+                  s['confirmedPlace'] as Map? ?? {},
+                );
+                final dateTs = s['appointmentDate'];
+                final date = ((dateTs as dynamic).toDate() as DateTime)
+                    .toLocal();
+                final isNext = i == 0;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -481,18 +715,18 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isNext
-                          ? AppTheme.primary.withOpacity(0.4)
+                          ? AppTheme.primary.withValues(alpha: 0.4)
                           : AppTheme.border,
                       width: isNext ? 1.5 : 1,
                     ),
                     boxShadow: isNext
                         ? [
-                      BoxShadow(
-                        color: AppTheme.primary.withOpacity(0.08),
-                        blurRadius: 12,
-                        offset: const Offset(0, 3),
-                      )
-                    ]
+                            BoxShadow(
+                              color: AppTheme.primary.withValues(alpha: 0.08),
+                              blurRadius: 12,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
                         : [],
                   ),
                   child: Row(
@@ -501,9 +735,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          color: isNext
-                              ? AppTheme.primaryBg
-                              : Colors.grey.shade50,
+                          color: isNext ? AppTheme.primaryBg : AppTheme.bg,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -516,7 +748,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                                 fontWeight: FontWeight.bold,
                                 color: isNext
                                     ? AppTheme.primary
-                                    : Colors.grey.shade500,
+                                    : AppTheme.textMuted,
                               ),
                             ),
                             Text(
@@ -525,7 +757,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                                 fontSize: 10,
                                 color: isNext
                                     ? AppTheme.primary
-                                    : Colors.grey.shade400,
+                                    : AppTheme.disabled,
                               ),
                             ),
                           ],
@@ -554,9 +786,9 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                             ),
                             Text(
                               place['address'] ?? '',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey.shade500,
+                                color: AppTheme.textMuted,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -612,8 +844,10 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
             ),
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
-              child: Text(' / 100',
-                  style: TextStyle(fontSize: 18, color: Colors.grey)),
+              child: Text(
+                ' / 100',
+                style: TextStyle(fontSize: 18, color: AppTheme.textMuted),
+              ),
             ),
           ],
         ),
@@ -627,8 +861,10 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
             animation: _scoreAnim,
             builder: (_, __) => LinearProgressIndicator(
               value: _scoreAnim.value * (_intimacyScore / 100),
-              backgroundColor: Colors.grey.shade100,
-              valueColor: AlwaysStoppedAnimation(_intimacyColor(_intimacyScore)),
+              backgroundColor: AppTheme.border,
+              valueColor: AlwaysStoppedAnimation(
+                _intimacyColor(_intimacyScore),
+              ),
               minHeight: 10,
             ),
           ),
@@ -664,8 +900,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
           runSpacing: 8,
           children: _keywords.map((kw) {
             return Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
                 color: AppTheme.primaryBg,
                 borderRadius: BorderRadius.circular(20),
@@ -702,7 +937,10 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         Center(
           child: Column(
             children: [
-              CircularProgressIndicator(color: AppTheme.primary, strokeWidth: 2),
+              CircularProgressIndicator(
+                color: AppTheme.primary,
+                strokeWidth: 2,
+              ),
               const SizedBox(height: 12),
               Text(
                 '분석 결과를 불러오는 중이에요...',
@@ -713,6 +951,118 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         ),
         const SizedBox(height: 20),
       ],
+    );
+  }
+}
+
+class _DialogAction {
+  final String label;
+  final bool primary;
+  final bool destructive;
+  final VoidCallback onTap;
+
+  const _DialogAction({
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+    this.destructive = false,
+  });
+}
+
+class _SimpleDialog extends StatelessWidget {
+  final String title;
+  final String? content;
+  final List<_DialogAction> actions;
+
+  const _SimpleDialog({
+    required this.title,
+    required this.content,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textDark,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (content != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                content!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textMuted,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 24),
+            Row(
+              children: actions.map((a) {
+                return Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(left: a == actions.first ? 0 : 6),
+                    child: a.primary
+                        ? ElevatedButton(
+                            onPressed: a.onTap,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: a.destructive
+                                  ? AppTheme.error
+                                  : AppTheme.primary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              a.label,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : OutlinedButton(
+                            onPressed: a.onTap,
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppTheme.border),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              a.label,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
+                          ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

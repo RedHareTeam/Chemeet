@@ -34,6 +34,7 @@ class RoomService {
   }
 
   // 초대 코드로 방 입장
+  // 반환값: roomId(성공), 'FULL'(정원 초과), null(코드 없음)
   Future<String?> joinRoom({
     required String inviteCode,
     required String myUserId,
@@ -49,21 +50,37 @@ class RoomService {
 
     final roomDoc = snap.docs.first;
     final roomId = roomDoc.id;
-    final members = List<String>.from(roomDoc.data()['members'] ?? []);
+    final roomRef = _db.collection('rooms').doc(roomId);
 
-    // 이미 참여 중이면 바로 반환
-    if (members.contains(myUserId)) return roomId;
+    String? result;
+    await _db.runTransaction((tx) async {
+      final fresh = await tx.get(roomRef);
+      final data = fresh.data()!;
+      final members = List<String>.from(data['members'] ?? []);
+      final maxMembers = data['maxMembers'] as int? ?? 2;
 
-    await _db.collection('rooms').doc(roomId).update({
-      'members': FieldValue.arrayUnion([myUserId]),
-      'memberNames.$myUserId': myUserName,
+      if (members.contains(myUserId)) {
+        result = roomId;
+        return;
+      }
+      if (members.length >= maxMembers) {
+        result = 'FULL';
+        return;
+      }
+      tx.update(roomRef, {
+        'members': FieldValue.arrayUnion([myUserId]),
+        'memberNames.$myUserId': myUserName,
+      });
+      result = roomId;
     });
 
-    await _db.collection('users').doc(myUserId).update({
-      'rooms': FieldValue.arrayUnion([roomId]),
-    });
+    if (result == roomId) {
+      await _db.collection('users').doc(myUserId).update({
+        'rooms': FieldValue.arrayUnion([roomId]),
+      });
+    }
 
-    return roomId;
+    return result;
   }
 
   // 내 방 목록 실시간 구독
@@ -93,35 +110,47 @@ class RoomService {
     return snap.exists ? {...snap.data()!, 'roomId': snap.id} : null;
   }
 
-  // 장소 확정 후 히스토리 저장 + 서브컬렉션 초기화
+  // 장소 확정 히스토리 1회 저장 (트랜잭션으로 중복 방지)
+  Future<void> saveConfirmHistory({
+    required String roomId,
+    required Map<String, dynamic> confirmedPlace,
+    required List<String> members,
+  }) async {
+    final roomRef = _db.collection('rooms').doc(roomId);
+    final histRef = roomRef.collection('history').doc();
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(roomRef);
+      if (snap.data()?['historySaved'] == true) return;
+      final data = snap.data() ?? {};
+      tx.set(histRef, {
+        'confirmedPlace':  confirmedPlace,
+        'members':         members,
+        'appointmentDate': data['appointmentDate'],
+        'intimacyScore':   data['intimacyScore'],
+        'date':            FieldValue.serverTimestamp(),
+      });
+      tx.update(roomRef, {'historySaved': true});
+    });
+  }
+
+  // (레거시 호환 - 내부 리셋이 필요한 경우 직접 호출)
   Future<void> confirmAndReset({
     required String roomId,
     required Map<String, dynamic> confirmedPlace,
     required List<String> members,
   }) async {
-    // 방 데이터에서 appointmentDate 가져오기
-    final roomSnap = await _db.collection('rooms').doc(roomId).get();
-    final appointmentDate = roomSnap.data()?['appointmentDate'];
+    await saveConfirmHistory(
+        roomId: roomId, confirmedPlace: confirmedPlace, members: members);
 
-    final batch = _db.batch();
     final roomRef = _db.collection('rooms').doc(roomId);
-
-    // 히스토리에 장소 + 약속날짜 저장
-    batch.set(roomRef.collection('history').doc(), {
-      'confirmedPlace': confirmedPlace,
-      'members': members,
-      'appointmentDate': appointmentDate,  // ← 추가
-      'date': FieldValue.serverTimestamp(),
-    });
-
-    // status waiting으로 초기화
+    final batch   = _db.batch();
     batch.update(roomRef, {
-      'status': 'waiting',
-      'places': FieldValue.delete(),
-      'confirmedPlace': FieldValue.delete(),
+      'status':          'waiting',
+      'places':          FieldValue.delete(),
+      'confirmedPlace':  FieldValue.delete(),
       'appointmentDate': FieldValue.delete(),
+      'historySaved':    FieldValue.delete(),
     });
-
     await batch.commit();
 
     for (final col in ['circles', 'messages', 'votes']) {
@@ -140,6 +169,61 @@ class RoomService {
       batch.delete(doc.reference);
     }
     await batch.commit();
+  }
+
+  // 방 나가기
+  // - members에서 제거 + 활동 중(drawing/voting)이면 상태 초기화
+  // - members가 0명이면 방 + 서브컬렉션 전체 삭제
+  Future<void> leaveRoom({
+    required String roomId,
+    required String userId,
+  }) async {
+    final roomRef = _db.collection('rooms').doc(roomId);
+    bool isRoomDeleted = false;
+    bool needsSubReset = false;
+
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(roomRef);
+      if (!snap.exists) return;
+
+      final data     = snap.data()!;
+      final members  = List<String>.from(data['members'] ?? []);
+      final status   = data['status'] as String? ?? 'waiting';
+      members.remove(userId);
+
+      isRoomDeleted   = members.isEmpty;
+      needsSubReset   = !isRoomDeleted && (status == 'drawing' || status == 'voting');
+
+      if (isRoomDeleted) {
+        tx.delete(roomRef);
+      } else {
+        final update = <String, dynamic>{
+          'members': members,
+          'memberNames.$userId': FieldValue.delete(),
+        };
+        if (needsSubReset) {
+          update['status']          = 'waiting';
+          update['appointmentDate'] = FieldValue.delete();
+          update['places']          = FieldValue.delete();
+        }
+        tx.update(roomRef, update);
+      }
+    });
+
+    // 서브컬렉션 정리 (트랜잭션 밖에서)
+    if (isRoomDeleted) {
+      for (final col in ['circles', 'messages', 'votes', 'history']) {
+        await _deleteSubcollection(roomId, col);
+      }
+    } else if (needsSubReset) {
+      for (final col in ['circles', 'messages', 'votes']) {
+        await _deleteSubcollection(roomId, col);
+      }
+    }
+
+    await _db.collection('users').doc(userId).update({
+      'rooms': FieldValue.arrayRemove([roomId]),
+    });
   }
 
   // 만남 히스토리 구독

@@ -75,5 +75,9 @@
       </dict>
     <key>io.flutter.embedded_views_preview</key>
     <true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>약속 후기 사진을 선택하기 위해 접근합니다</string>
+	<key>NSCameraUsageDescription</key>
+	<string>약속 후기 사진을 촬영하기 위해 접근합니다</string>
 </dict>
 </plist>

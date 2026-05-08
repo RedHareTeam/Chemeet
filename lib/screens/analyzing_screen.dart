@@ -11,6 +11,9 @@ class AnalyzingScreen extends StatefulWidget {
   final int maxMembers;
   final String txtContent;
 
+  /// true 이면 재분석 모드: 방 생성 없이 기존 roomId 데이터만 업데이트
+  final bool isReAnalyze;
+
   const AnalyzingScreen({
     super.key,
     required this.roomId,
@@ -18,6 +21,7 @@ class AnalyzingScreen extends StatefulWidget {
     required this.myUserName,
     required this.maxMembers,
     required this.txtContent,
+    this.isReAnalyze = false,
   });
 
   @override
@@ -70,22 +74,47 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
   }
 
   Future<void> _startAnalysis() async {
-    final result = await AnalysisService().analyze(
-      roomId: widget.roomId,
-      txtContent: widget.txtContent,
-    );
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RoomHomeScreen(
-          roomId: widget.roomId,
-          myUserId: widget.myUserId,
-          myUserName: widget.myUserName,
-          maxMembers: widget.maxMembers,
+    try {
+      await AnalysisService().analyze(
+        roomId: widget.roomId,
+        txtContent: widget.txtContent,
+      );
+      if (!mounted) return;
+
+      if (widget.isReAnalyze) {
+        Navigator.pop(context); // RoomHomeScreen으로 복귀
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RoomHomeScreen(
+              roomId:     widget.roomId,
+              myUserId:   widget.myUserId,
+              myUserName: widget.myUserName,
+              maxMembers: widget.maxMembers,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('분석 오류'),
+          content: const Text('분석 중 오류가 발생했어요.\n파일을 확인하고 다시 시도해주세요.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('확인', style: TextStyle(color: AppTheme.primary)),
+            ),
+          ],
         ),
-      ),
-    );
+      );
+      if (mounted) Navigator.pop(context); // UploadScreen으로 복귀
+    }
   }
 
   @override
@@ -107,7 +136,6 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 펄스 애니메이션 원
                 ScaleTransition(
                   scale: _pulseAnim,
                   child: Container(
@@ -115,7 +143,7 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                     height: 120,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                     ),
                     child: Center(
                       child: Container(
@@ -125,8 +153,9 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                           shape: BoxShape.circle,
                           color: Colors.white,
                         ),
-                        child: const Center(
-                          child: Text('', style: TextStyle(fontSize: 36)),
+                        child: Center(
+                          child: Icon(Icons.chat_bubble_outline,
+                              size: 36, color: AppTheme.primary),
                         ),
                       ),
                     ),
@@ -135,9 +164,9 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
 
                 const SizedBox(height: 40),
 
-                const Text(
-                  '대화를 분석하고 있어요',
-                  style: TextStyle(
+                Text(
+                  widget.isReAnalyze ? '리포트를 업데이트하고 있어요' : '대화를 분석하고 있어요',
+                  style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
@@ -157,7 +186,6 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
 
                 const SizedBox(height: 32),
 
-                // 프로그레스 바
                 AnimatedBuilder(
                   animation: _progressController,
                   builder: (context, _) {
@@ -167,7 +195,7 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                           borderRadius: BorderRadius.circular(8),
                           child: LinearProgressIndicator(
                             value: _progressController.value,
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(alpha: 0.2),
                             valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                             minHeight: 6,
                           ),
@@ -184,7 +212,6 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
 
                 const SizedBox(height: 40),
 
-                // 단계 점 인디케이터
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(_steps.length, (i) {
@@ -196,7 +223,7 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                       decoration: BoxDecoration(
                         color: i <= _stepIndex
                             ? Colors.white
-                            : Colors.white.withOpacity(0.3),
+                            : Colors.white.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     );

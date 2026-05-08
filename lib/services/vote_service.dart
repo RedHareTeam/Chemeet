@@ -8,6 +8,7 @@ class VoteService {
   Future<void> selectPlace({
     required String roomId,
     required String userId,
+    required String userName,
     required String placeId,
   }) async {
     await _db
@@ -15,7 +16,24 @@ class VoteService {
         .doc(roomId)
         .collection('votes')
         .doc(userId)
-        .set({'userId': userId, 'selectedPlaceId': placeId}, SetOptions(merge: true));
+        .set({
+      'userId': userId,
+      'userName': userName,
+      'selectedPlaceId': placeId,
+    }, SetOptions(merge: true));
+  }
+
+  // 투표 취소
+  Future<void> clearVote({
+    required String roomId,
+    required String userId,
+  }) async {
+    await _db
+        .collection('rooms')
+        .doc(roomId)
+        .collection('votes')
+        .doc(userId)
+        .delete();
   }
 
   // 투표 현황 실시간 구독

@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+.idea/
 
 # Flutter
 *.iml
@@ -11,3 +12,6 @@ __pycache__/
 .flutter-plugins
 .flutter-plugins-dependencies
 build/
+
+# iOS
+ios/Pods/

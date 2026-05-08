@@ -1,6 +1,7 @@
 import 'package:chemeet/screens/room_home_screen.dart';
 import 'package:chemeet/screens/upload_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../services/room_service.dart';
 import 'auth_screen.dart';
@@ -29,61 +30,56 @@ class _RoomListScreenState extends State<RoomListScreen> {
     _loadUserName();
   }
 
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserName() async {
     final info = await _authService.getUserInfo(_myUserId);
     setState(() => _myUserName = info?['userName'] ?? '');
   }
 
-  // 방 만들기 — UploadScreen(대화 분석)으로 이동
   Future<void> _createRoom() async {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()));
-  }
-
-  // 코드 입장 다이얼로그
-  Future<void> _joinRoom() async {
-    _codeController.clear();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('초대 코드 입력'),
-        content: TextField(
-          controller: _codeController,
-          decoration: const InputDecoration(hintText: '6자리 코드 입력'),
-          textCapitalization: TextCapitalization.characters,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소', style: TextStyle(color: AppTheme.textMuted)),
-          ),
-          TextButton(
-            onPressed: () async {
-              final code = _codeController.text.trim().toUpperCase();
-              final roomId = await _roomService.joinRoom(
-                inviteCode: code,
-                myUserId: _myUserId,
-                myUserName: _myUserName,
-              );
-              if (!mounted) return;
-              Navigator.pop(context);
-              if (roomId != null) {
-                final room = await _roomService.getRoom(roomId);
-                if (room != null && mounted) _enterRoom(roomId, room);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('유효하지 않은 코드예요')),
-                );
-              }
-            },
-            child: const Text('입장', style: TextStyle(color: AppTheme.primary)),
-          ),
-        ],
-      ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const UploadScreen()),
     );
   }
 
-  // 방 입장
+  Future<void> _joinRoom() async {
+    _codeController.clear();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) =>
+          _JoinSheet(controller: _codeController, onJoin: _handleJoinCode),
+    );
+  }
+
+  Future<void> _handleJoinCode(String code) async {
+    final result = await _roomService.joinRoom(
+      inviteCode: code,
+      myUserId: _myUserId,
+      myUserName: _myUserName,
+    );
+    if (!mounted) return;
+    if (result == 'FULL') {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('방이 가득 찼어요')));
+    } else if (result != null) {
+      final room = await _roomService.getRoom(result);
+      if (room != null && mounted) _enterRoom(result, room);
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('유효하지 않은 코드예요')));
+    }
+  }
+
   void _enterRoom(String roomId, Map<String, dynamic> room) {
     Navigator.push(
       context,
@@ -102,7 +98,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
   Future<void> _signOut() async {
     await _authService.signOut();
     if (mounted) {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthScreen()));
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+      );
     }
   }
 
@@ -111,56 +110,60 @@ class _RoomListScreenState extends State<RoomListScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('Chemeet', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Chemeet'),
         actions: [
-          IconButton(onPressed: _signOut, icon: const Icon(Icons.logout)),
+          IconButton(
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: '로그아웃',
+          ),
         ],
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: _roomStream,
         builder: (context, snap) {
-          if (snap.hasError) return Center(child: Text('오류: ${snap.error}'));
+          if (snap.hasError) {
+            return Center(child: Text('오류: ${snap.error}'));
+          }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(color: AppTheme.primary),
+            );
           }
 
           final rooms = snap.data ?? [];
-
           if (rooms.isEmpty) return _buildEmpty();
 
           return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
             itemCount: rooms.length,
-            itemBuilder: (context, index) => _RoomCard(
-              room: rooms[index],
+            itemBuilder: (_, i) => _RoomCard(
+              room: rooms[i],
               myUserId: _myUserId,
-              onTap: () => _enterRoom(rooms[index]['roomId'], rooms[index]),
+              onTap: () => _enterRoom(rooms[i]['roomId'], rooms[i]),
             ),
           );
         },
       ),
-      // 방 만들기(+) / 코드 입장 아이콘 버튼
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton(
+          _Fab(
             heroTag: 'join',
             onPressed: _joinRoom,
             backgroundColor: AppTheme.surface,
             foregroundColor: AppTheme.primary,
-            elevation: 2,
+            icon: Icons.vpn_key_rounded,
             tooltip: '코드로 입장',
-            child: const Icon(Icons.login_rounded),
           ),
           const SizedBox(height: 12),
-          FloatingActionButton(
+          _Fab(
             heroTag: 'create',
             onPressed: _createRoom,
             backgroundColor: AppTheme.primary,
             foregroundColor: Colors.white,
-            elevation: 2,
+            icon: Icons.add_rounded,
             tooltip: '방 만들기',
-            child: const Icon(Icons.add_rounded),
           ),
         ],
       ),
@@ -172,20 +175,212 @@ class _RoomListScreenState extends State<RoomListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people_outline, size: 56, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          const Text('아직 참여 중인 방이 없어요',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 15)),
-          const SizedBox(height: 8),
-          Text('오른쪽 아래 + 버튼으로 첫 방을 만들어보세요',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppTheme.primaryBg, AppTheme.accentBg],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.people_outline_rounded,
+              size: 32,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '아직 참여 중인 방이 없어요',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '+ 버튼으로 새 방을 만들거나\n코드로 친구 방에 입장해보세요',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.textMuted,
+              height: 1.6,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// ── 방 카드 위젯 ──
+// ── 초대코드 바텀시트 ────────────────────────────────────────────
+class _JoinSheet extends StatefulWidget {
+  final TextEditingController controller;
+  final Future<void> Function(String code) onJoin;
+
+  const _JoinSheet({required this.controller, required this.onJoin});
+
+  @override
+  State<_JoinSheet> createState() => _JoinSheetState();
+}
+
+class _JoinSheetState extends State<_JoinSheet> {
+  bool _loading = false;
+
+  Future<void> _submit() async {
+    final code = widget.controller.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() => _loading = true);
+    Navigator.pop(context);
+    await widget.onJoin(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + bottomInset),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 핸들바
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppTheme.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 아이콘
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppTheme.primary, Color(0xFF9B8BFF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.vpn_key_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          const Text(
+            '초대 코드로 입장',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textDark,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '친구에게 받은 6자리 코드를 입력하세요',
+            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
+          ),
+          const SizedBox(height: 24),
+
+          // 코드 입력 필드
+          TextField(
+            controller: widget.controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.characters,
+            textAlign: TextAlign.center,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+              LengthLimitingTextInputFormatter(6),
+            ],
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 8,
+              color: AppTheme.textDark,
+            ),
+            decoration: InputDecoration(
+              hintText: '------',
+              hintStyle: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 8,
+                color: AppTheme.border,
+              ),
+              filled: true,
+              fillColor: AppTheme.bg,
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppTheme.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(
+                  color: AppTheme.primary,
+                  width: 1.5,
+                ),
+              ),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 16),
+
+          // 입장 버튼
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                elevation: 0,
+              ),
+              child: _loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text(
+                      '입장하기',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 방 카드 ─────────────────────────────────────────────────────
 class _RoomCard extends StatelessWidget {
   final Map<String, dynamic> room;
   final String myUserId;
@@ -199,87 +394,110 @@ class _RoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final roomTitle = room['roomTitle'] ?? '제목 없음';
+    final roomTitle = room['roomTitle'] as String? ?? '제목 없음';
     final memberNames = Map<String, dynamic>.from(room['memberNames'] ?? {});
-    // 참가자 닉네임 나열 (나 먼저)
-    final names = memberNames.entries
-        .map((e) => e.value.toString())
-        .toList();
-    final status = room['status'] ?? 'idle';
+    final names = memberNames.values.map((e) => e.toString()).toList();
+    final status = room['status'] as String? ?? 'idle';
+    final isActive = status == 'drawing' || status == 'voting';
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.border),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isActive
+                ? _statusColor(status).withValues(alpha: 0.3)
+                : AppTheme.border,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: isActive
+                  ? _statusColor(status).withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
-        child: Row(
-          children: [
-            // 방 이니셜 아바타
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+          child: Row(
+            children: [
+            // 아바타
             Container(
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: AppTheme.primaryBg,
-                borderRadius: BorderRadius.circular(12),
+                color: isActive
+                    ? _statusColor(status).withValues(alpha: 0.15)
+                    : AppTheme.primaryBg,
+                borderRadius: BorderRadius.circular(13),
               ),
               child: Center(
                 child: Text(
                   roomTitle.isNotEmpty ? roomTitle[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.bold,
+                  style: TextStyle(
+                    color: isActive ? _statusColor(status) : AppTheme.primary,
+                    fontWeight: FontWeight.w800,
                     fontSize: 18,
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 14),
+
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 방 이름
-                  Text(
-                    roomTitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: AppTheme.textDark,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      roomTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AppTheme.textDark,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  // 참가자 닉네임
-                  Text(
-                    names.join(' · '),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
+                    const SizedBox(height: 3),
+                    Text(
+                      names.join(' · '),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textMuted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            // 상태 뱃지
-            if (status == 'drawing' || status == 'voting')
+
+            if (isActive) ...[
               _StatusBadge(status: status),
+              const SizedBox(width: 14),
+            ] else
+              const Padding(
+                padding: EdgeInsets.only(right: 14),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.border,
+                  size: 20,
+                ),
+              ),
           ],
         ),
       ),
-    );
+    ),
+  );
   }
+
+  Color _statusColor(String status) =>
+      status == 'drawing' ? AppTheme.drawing : AppTheme.voting;
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -289,20 +507,70 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDrawing = status == 'drawing';
+    final color = isDrawing ? AppTheme.drawing : AppTheme.voting;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: isDrawing ? AppTheme.primaryBg : AppTheme.accentBg,
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        isDrawing ? '지도' : '투표 중',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: isDrawing ? AppTheme.primary : AppTheme.accent,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            isDrawing ? '지도 중' : '투표 중',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+// ── FAB 헬퍼 ────────────────────────────────────────────────────
+class _Fab extends StatelessWidget {
+  final String heroTag;
+  final VoidCallback onPressed;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final IconData icon;
+  final String tooltip;
+
+  const _Fab({
+    required this.heroTag,
+    required this.onPressed,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.icon,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton(
+      heroTag: heroTag,
+      onPressed: onPressed,
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
+      elevation: 2,
+      tooltip: tooltip,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: backgroundColor == AppTheme.surface
+            ? const BorderSide(color: AppTheme.border)
+            : BorderSide.none,
+      ),
+      child: Icon(icon),
     );
   }
 }

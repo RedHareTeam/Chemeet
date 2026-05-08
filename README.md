@@ -4,11 +4,21 @@
 
 ---
 
+## 주요 기능
+
+- **대화 분석** — 카카오톡 txt 파일 업로드 → GPT-4o-mini로 취향 키워드·친밀도 점수 추출
+- **중간지점 추천** — 두 사용자가 지도에서 원을 그리면 교집합 구역 계산, ODsay 대중교통 시간 기반 최적 역 선택
+- **장소 투표** — 추천 장소 목록에서 실시간 투표 후 최종 장소 확정
+- **친밀도 리포트** — 점수(0~100) · 라벨 · 취향 키워드를 방 홈에서 확인
+- **방문 히스토리 지도** — 확정된 약속 장소들을 지도 위 히트맵으로 시각화
+- **다가오는 약속** — 확정된 약속 날짜·장소를 방 홈에서 목록으로 표시
+
+---
+
 ## 남은 작업
 
 - 3~4명 확장
-- 방문 히스토리
-- 투표 동점 처리
+- UI/UX 개선
 
 ---
 
@@ -42,20 +52,24 @@ Chemeet/
     ├── main.dart                   # 앱 시작점, Firebase/.env 초기화, 첫 화면 분기
     ├── firebase_options.dart       # Firebase 플랫폼별 설정
     ├── app_theme.dart              # 공통 색상/텍스트/컴포넌트 테마 정의
+    ├── constants.dart              # 백엔드 baseUrl (iOS/Android 분기)
     ├── screens/
     │   ├── auth_screen.dart        # 로그인/회원가입
     │   ├── room_list_screen.dart   # 내 방 목록 조회, 방 생성/입장
-    │   ├── room_home_screen.dart   # 방 홈, 친밀도/키워드/약속 상태 표시
+    │   ├── room_home_screen.dart   # 방 홈 — 친밀도 리포트, 약속 현황, 메뉴
     │   ├── upload_screen.dart      # 대화 txt 업로드 및 분석 요청
     │   ├── analyzing_screen.dart   # 분석 진행 화면
     │   ├── date_setting_screen.dart# 약속 날짜/시간 설정
-    │   ├── map_screen.dart         # 카카오맵 원 그리기 및 장소 검색 요청
-    │   └── place_screen.dart       # 후보 장소 투표 및 최종 장소 확정
+    │   ├── map_screen.dart         # 카카오맵 원 그리기 및 장소 추천 요청
+    │   ├── place_screen.dart       # 후보 장소 투표 및 최종 장소 확정
+    │   └── heatmap_screen.dart     # 방문 히스토리 지도 (히트맵)
     ├── services/
     │   ├── auth_service.dart       # Firebase Auth 및 사용자 정보 처리
     │   ├── room_service.dart       # 방 생성/입장/조회/히스토리 저장
+    │   ├── analysis_service.dart   # Flask /analyze 호출, 결과 Firestore 저장
     │   ├── circle_service.dart     # 원 좌표 저장, 장소 저장, 상태 변경
     │   ├── vote_service.dart       # 장소 투표 처리
+    │   ├── history_service.dart    # 방문 히스토리 조회 및 실시간 구독
     │   └── place_service.dart      # 지도 기반 주변 장소 검색
     └── widgets/
         └── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시
@@ -140,46 +154,6 @@ Chemeet/
 
 ---
 
-## 프론트 연동 가이드
-
-### 호출 순서
-```
-1. 대화 파일 업로드 (둘 중 한 명) → POST /analyze → 분석 결과 Firestore 저장
-2. 두 명 지도에서 원 그리기 완료
-3. 장소 추천 받기 버튼 (한 명만) → POST /recommend → 장소 목록 Firestore 저장 → 투표 화면
-```
-
-### 주요 필드 활용
-
-| 필드 | 용도 |
-|------|------|
-| `intimacy_score` | 지도 원 색상/투명도 시각화 (0~100) |
-| `radius_expansion` | 지도 원 크기 조정 배수 (1.0 / 1.3 / 1.5) |
-| `keywords` | 방 홈 태그 표시 (#감성 #피자집) |
-| `partner_name` | 상대방 이름 표시 |
-| `area_name` | 중간지점 역 이름 ("서강대역에서 만나요") |
-| `user1_transit.time` | A 대중교통 이동시간 (분) |
-| `user2_transit.time` | B 대중교통 이동시간 (분) |
-| `total_time` | 두 사람 이동시간 합산 (분) |
-| `secondary_place_type` | 2차 장소 별도 표시 (예: 식사 후 카페) |
-| `weather.condition` | 날씨 아이콘 표시 |
-| `places` | 추천 장소 카드 (최대 20개) |
-
-### 응답 시간
-- `/analyze`: 약 3~5초 (OpenAI API)
-- `/recommend`: 약 3~5초 (ODsay 병렬 호출)
-
-### 날씨 condition 값
-| 값 | 의미 |
-|----|------|
-| `clear` | 맑음 |
-| `clouds` | 흐림 |
-| `rain` | 비 |
-| `snow` | 눈 |
-| `thunder` | 천둥번개 |
-
----
-
 ## DB 구조 (Firestore)
 
 ```
@@ -217,6 +191,11 @@ rooms/{roomId}/history/{historyId}
 ├── members: [userId, ...]
 ├── appointmentDate: timestamp
 └── date: timestamp
+
+rooms/{roomId}/history/{historyId}/records/{recordId}
+├── lat, lng: number
+├── name, address, category: string
+└── visitedAt: timestamp
 ```
 
 ---
@@ -229,4 +208,16 @@ drawing   → 날짜 확정 후 지도에서 원 그리기
 voting    → 장소 후보 투표 진행
 confirmed → 최종 장소 확정
 idle      → 전체 초기화 후 다시 시작
+```
+
+---
+
+## 환경 변수 (.env)
+
+```
+OPENAI_API_KEY=
+KAKAO_JS_KEY=
+KAKAO_REST_KEY=
+OPENWEATHER_API_KEY=
+ODSAY_API_KEY=
 ```

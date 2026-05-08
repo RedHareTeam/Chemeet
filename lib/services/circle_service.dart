@@ -26,6 +26,20 @@ class CircleService {
     });
   }
 
+  // 내 원 단건 조회
+  Future<Map<String, dynamic>?> getMyCircle({
+    required String roomId,
+    required String userId,
+  }) async {
+    final snap = await _db
+        .collection('rooms')
+        .doc(roomId)
+        .collection('circles')
+        .doc(userId)
+        .get();
+    return snap.exists ? snap.data() : null;
+  }
+
   // 특정 멤버 원 실시간 구독
   Stream<Map<String, dynamic>?> watchPartnerCircle({
     required String roomId,
@@ -70,6 +84,16 @@ class CircleService {
         .orderBy('createdAt', descending: false)
         .snapshots()
         .map((snap) => snap.docs.map((d) => d.data()).toList());
+  }
+
+  // 방의 모든 원 일괄 조회
+  Future<List<Map<String, dynamic>>> getAllCircles(String roomId) async {
+    final snap = await _db
+        .collection('rooms')
+        .doc(roomId)
+        .collection('circles')
+        .get();
+    return snap.docs.map((d) => {...d.data(), 'userId': d.id}).toList();
   }
 
   // 추천 장소 저장 + status voting으로 변경

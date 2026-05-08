@@ -100,7 +100,7 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
     if (!mounted) return;
     setState(() => _loading = false);
 
-    Navigator.pushAndRemoveUntil(
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (_) => MapScreen(
@@ -110,7 +110,6 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
           members: widget.members,
         ),
       ),
-          (route) => route.settings.name == 'RoomHomeScreen' || route.isFirst,
     );
   }
 
@@ -221,11 +220,11 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
                   color: AppTheme.surface,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: AppTheme.primary.withOpacity(0.3),
+                    color: AppTheme.primary.withValues(alpha: 0.3),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primary.withOpacity(0.08),
+                      color: AppTheme.primary.withValues(alpha: 0.08),
                       blurRadius: 12,
                       offset: const Offset(0, 3),
                     ),
@@ -267,7 +266,7 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade200,
+                  disabledBackgroundColor: AppTheme.disabledBg,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -324,7 +323,7 @@ class _PickerTile extends StatelessWidget {
         children: [
           Icon(
             icon,
-            color: isSelected ? AppTheme.primary : Colors.grey.shade400,
+            color: isSelected ? AppTheme.primary : AppTheme.disabled,
             size: 22,
           ),
           const SizedBox(width: 12),
@@ -333,11 +332,11 @@ class _PickerTile extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              color: isSelected ? AppTheme.primary : Colors.grey.shade500,
+              color: isSelected ? AppTheme.primary : AppTheme.textMuted,
             ),
           ),
           const Spacer(),
-          Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 20),
+          Icon(Icons.chevron_right, color: AppTheme.disabled, size: 20),
         ],
       ),
     );
