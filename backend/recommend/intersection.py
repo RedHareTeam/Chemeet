@@ -20,13 +20,16 @@ def utm_to_latlon(x, y):
     return lat, lng
 
 
-def calculate_intersection(user1, user2, radius_expansion=1.0):
+def calculate_intersection(users, radius_expansion=1.0):
     """
-    두 사용자의 이동 가능 구역 교집합 계산
+    다수 사용자의 이동 가능 구역 교집합 계산 (2~5명)
 
     입력:
-    user1 = {"lat": 37.5665, "lng": 126.9780, "radius": 3000}
-    user2 = {"lat": 37.4979, "lng": 127.0276, "radius": 3000}
+    users = [
+        {"lat": 37.5665, "lng": 126.9780, "radius": 3000},
+        {"lat": 37.4979, "lng": 127.0276, "radius": 3000},
+        ...
+    ]
     radius_expansion = 친밀도 기반 반경 확장 배수
 
     반환:
@@ -37,27 +40,26 @@ def calculate_intersection(user1, user2, radius_expansion=1.0):
         "search_radius": 1500
     }
     """
-    # 위도/경도 → UTM 변환
-    x1, y1 = latlon_to_utm(user1['lat'], user1['lng'])
-    x2, y2 = latlon_to_utm(user2['lat'], user2['lng'])
+    if not users:
+        return None
 
-    # 반경 확장 적용
-    r1 = user1['radius'] * radius_expansion
-    r2 = user2['radius'] * radius_expansion
+    # 원 생성
+    circles = []
+    for user in users:
+        x, y = latlon_to_utm(user['lat'], user['lng'])
+        r = user['radius'] * radius_expansion
+        circles.append(Point(x, y).buffer(r))
 
-    # Shapely 원 생성
-    circle1 = Point(x1, y1).buffer(r1)
-    circle2 = Point(x2, y2).buffer(r2)
-
-    # 교집합 계산
-    intersection = circle1.intersection(circle2)
+    # 전체 교집합 계산
+    intersection = circles[0]
+    for circle in circles[1:]:
+        intersection = intersection.intersection(circle)
 
     if intersection.is_empty:
-        # 교집합 없음 → 중간지점 반환
-        # 카카오맵 API 연동 후 수정해야함
-        mid_x = (x1 + x2) / 2
-        mid_y = (y1 + y2) / 2
-        mid_lat, mid_lng = utm_to_latlon(mid_x, mid_y)
+        # 교집합 없음 → 전체 중간지점 반환
+        xs = [latlon_to_utm(u['lat'], u['lng'])[0] for u in users]
+        ys = [latlon_to_utm(u['lat'], u['lng'])[1] for u in users]
+        mid_lat, mid_lng = utm_to_latlon(sum(xs) / len(xs), sum(ys) / len(ys))
 
         return {
             "has_intersection": False,
@@ -77,17 +79,22 @@ def calculate_intersection(user1, user2, radius_expansion=1.0):
         "has_intersection": True,
         "center_lat": round(center_lat, 6),
         "center_lng": round(center_lng, 6),
-        "search_radius": max(search_radius, 500)  # 최소 500m
+        "search_radius": max(search_radius, 500)
     }
 
 
-def get_intersection_shape(user1, user2, radius_expansion=1.0):
+def get_intersection_shape(users, radius_expansion=1.0):
     """교집합 Shapely geometry 반환 (교집합 없으면 None)"""
-    x1, y1 = latlon_to_utm(user1['lat'], user1['lng'])
-    x2, y2 = latlon_to_utm(user2['lat'], user2['lng'])
-    r1 = user1['radius'] * radius_expansion
-    r2 = user2['radius'] * radius_expansion
-    shape = Point(x1, y1).buffer(r1).intersection(Point(x2, y2).buffer(r2))
+    circles = []
+    for user in users:
+        x, y = latlon_to_utm(user['lat'], user['lng'])
+        r = user['radius'] * radius_expansion
+        circles.append(Point(x, y).buffer(r))
+
+    shape = circles[0]
+    for circle in circles[1:]:
+        shape = shape.intersection(circle)
+
     return None if shape.is_empty else shape
 
 

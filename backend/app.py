@@ -79,29 +79,32 @@ def recommend():
     if not data:
         return jsonify({"error": "데이터가 없습니다"}), 400
 
-    user1 = data.get('user1')
-    user2 = data.get('user2')
+    # users 리스트로 받기 (2~5명)
+    users = data.get('users')
     search_query = data.get('search_query', '맛집')
     mood = data.get('mood', [])
     intimacy_score = data.get('intimacy_score', 50)
 
-    if not user1 or not user2:
-        return jsonify({"error": "user1, user2 좌표가 필요합니다"}), 400
+    if not users or len(users) < 2:
+        return jsonify({"error": "users 좌표가 2명 이상 필요합니다"}), 400
+
+    if len(users) > 5:
+        return jsonify({"error": "최대 5명까지 지원합니다"}), 400
 
     # 반경 확장 배수
     radius_expansion = calculate_radius_expansion(intimacy_score)
 
-    # 교집합 계산 → 장소 검색 기준 (중심 + 반경)
-    intersection = calculate_intersection(user1, user2, radius_expansion)
+    # 교집합 계산
+    intersection = calculate_intersection(users, radius_expansion)
     center_lat   = intersection["center_lat"]
     center_lng   = intersection["center_lng"]
     search_radius = intersection["search_radius"]
 
-    # 교집합 내 최적 지하철역 탐색 → 순위 가중치 기준점으로만 사용
-    midpoint    = find_best_midpoint(user1, user2, radius_expansion)
-    area_name   = midpoint["area_name"]   if midpoint else None
-    station_lat = midpoint["center_lat"]  if midpoint else None
-    station_lng = midpoint["center_lng"]  if midpoint else None
+    # 교집합 내 최적 지하철역 탐색
+    midpoint    = find_best_midpoint(users, radius_expansion)
+    area_name   = midpoint["area_name"]  if midpoint else None
+    station_lat = midpoint["center_lat"] if midpoint else None
+    station_lng = midpoint["center_lng"] if midpoint else None
 
     # 날씨 정보 가져오기
     weather   = get_weather(center_lat, center_lng)
@@ -112,12 +115,12 @@ def recommend():
         search_radius = min(search_radius, 1500)
         stations = search_places("지하철역", center_lat, center_lng, radius=2000, size=3)
         if stations:
-            nearest     = stations[0]
-            center_lat  = nearest['lat']
-            center_lng  = nearest['lng']
-            area_name   = nearest['name']
+            nearest    = stations[0]
+            center_lat = nearest['lat']
+            center_lng = nearest['lng']
+            area_name  = nearest['name']
 
-    # 장소 검색 — 교집합 중심 기준으로 전체 교집합 커버
+    # 장소 검색
     base_query      = clean_search_query(search_query)
     primary_queries = get_primary_queries(mood, base_query)
 
@@ -139,18 +142,18 @@ def recommend():
     top_places = filtered[:20]
 
     # 교집합 외부 장소 제거
-    shape = get_intersection_shape(user1, user2, radius_expansion)
+    shape = get_intersection_shape(users, radius_expansion)
     if shape:
         in_intersection = [p for p in top_places if is_within_intersection(p['lat'], p['lng'], shape)]
         if in_intersection:
             top_places = in_intersection
 
-    # 지하철역 근접도 기반 순위 재조정 (가까울수록 상위)
+    # 지하철역 근접도 기반 순위 재조정
     if station_lat is not None:
         def dist_to_station(p):
             dlat = (p['lat'] - station_lat) * 111000
             dlng = (p['lng'] - station_lng) * 111000 * 0.82
-            return dlat ** 2 + dlng ** 2  # sqrt 생략 (순위용이므로 불필요)
+            return dlat ** 2 + dlng ** 2
         top_places.sort(key=dist_to_station)
 
     print(f"장소 수: {len(top_places)}")
@@ -166,8 +169,7 @@ def recommend():
         "center_lng": center_lng,
         "search_radius": search_radius,
         "weather": weather,
-        "user1_transit": midpoint["user1"] if midpoint else None,
-        "user2_transit": midpoint["user2"] if midpoint else None,
+        "users_transit": midpoint["users"] if midpoint else None,
         "total_time": midpoint["total_time"] if midpoint else None,
         "places": top_places
     })

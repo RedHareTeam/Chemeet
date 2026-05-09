@@ -21,7 +21,7 @@ def has_informal_title(text):
 # 격식 호칭
 def has_formal_title(text):
     return bool(re.search(r'(님|씨|대리|과장|팀장|부장|선생님|교수님)', text))
-# 새벽/늦은 밤 시간대 
+# 새벽/늦은 밤 시간대
 LATE_NIGHT_HOURS = {0, 1, 2, 3, 4, 5, 6, 7, 22, 23}
 
 
@@ -31,8 +31,13 @@ def calculate_intimacy_score(messages):
 
     total = len(messages)
 
-    # 1. 메시지 수 점수 (25점)
-    msg_score = min(total / 100, 1.0) * 25
+    # 인원 수 계산
+    sender_count = len(set(m['sender'] for m in messages))
+
+    # 1. 1인당 메시지 수 점수 (25점)
+    # 2명 기준 1인당 50개 = 만점, 인원 수 늘어도 공정하게 계산
+    msg_per_person = total / sender_count
+    msg_score = min(msg_per_person / 50, 1.0) * 25
 
     # 2. 반말 비율 점수 (35점)
     informal = sum(1 for m in messages if any(m['message'].endswith(e) for e in INFORMAL_ENDINGS))
@@ -62,7 +67,6 @@ def calculate_intimacy_score(messages):
         title_score = informal_title_ratio * 15
 
     # 6. 대화 시간대 점수 (10점)
-    # 새벽/늦은 밤 대화가 있으면 친밀도 높음
     late_night_count = sum(
         1 for m in messages
         if int(m['time'].split(':')[0]) in LATE_NIGHT_HOURS
