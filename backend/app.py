@@ -39,10 +39,8 @@ def analyze():
         if not messages:
             return jsonify({"error": "파싱된 메시지가 없습니다"}), 400
 
-        # OpenAI 취향 분석
         keywords = analyze_with_openai(messages)
 
-        # 친밀도 분석
         INTIMACY_MAX_MESSAGES = 100
         messages_for_intimacy = messages[-INTIMACY_MAX_MESSAGES:]
         intimacy_score = calculate_intimacy_score(messages_for_intimacy)
@@ -79,7 +77,6 @@ def recommend():
     if not data:
         return jsonify({"error": "데이터가 없습니다"}), 400
 
-    # users 리스트로 받기 (2~5명)
     users = data.get('users')
     search_query = data.get('search_query', '맛집')
     mood = data.get('mood', [])
@@ -91,23 +88,30 @@ def recommend():
     if len(users) > 5:
         return jsonify({"error": "최대 5명까지 지원합니다"}), 400
 
-    # 반경 확장 배수
     radius_expansion = calculate_radius_expansion(intimacy_score)
 
-    # 교집합 계산
     intersection = calculate_intersection(users, radius_expansion)
     center_lat   = intersection["center_lat"]
     center_lng   = intersection["center_lng"]
     search_radius = intersection["search_radius"]
 
     # 교집합 내 최적 지하철역 탐색
-    midpoint    = find_best_midpoint(users, radius_expansion)
+    try:
+        midpoint = find_best_midpoint(users, radius_expansion)
+    except Exception as e:
+        print(f"midpoint 오류: {e}")
+        midpoint = None
+
     area_name   = midpoint["area_name"]  if midpoint else None
     station_lat = midpoint["center_lat"] if midpoint else None
     station_lng = midpoint["center_lng"] if midpoint else None
 
     # 날씨 정보 가져오기
-    weather   = get_weather(center_lat, center_lng)
+    try:
+        weather = get_weather(center_lat, center_lng)
+    except Exception as e:
+        print(f"날씨 오류: {e}")
+        weather = {"condition": "clear", "temp": 0, "description": "알 수 없음"}
     condition = weather.get("condition", "clear")
 
     # 날씨 나쁠 때 반경 줄이기 + 역 근처로 중심 이동
@@ -142,11 +146,14 @@ def recommend():
     top_places = filtered[:20]
 
     # 교집합 외부 장소 제거
-    shape = get_intersection_shape(users, radius_expansion)
-    if shape:
-        in_intersection = [p for p in top_places if is_within_intersection(p['lat'], p['lng'], shape)]
-        if in_intersection:
-            top_places = in_intersection
+    try:
+        shape = get_intersection_shape(users, radius_expansion)
+        if shape:
+            in_intersection = [p for p in top_places if is_within_intersection(p['lat'], p['lng'], shape)]
+            if in_intersection:
+                top_places = in_intersection
+    except Exception as e:
+        print(f"교집합 필터 오류: {e}")
 
     # 지하철역 근접도 기반 순위 재조정
     if station_lat is not None:

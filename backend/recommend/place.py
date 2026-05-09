@@ -56,7 +56,8 @@ def search_places(query, lat, lng, radius=1500, size=5):
             "lat": float(item["y"]),
             "lng": float(item["x"]),
             "url": item["place_url"],
-            "distance": int(item["distance"]) if item["distance"] else 0
+            "distance": int(item["distance"]) if item["distance"] else 0,
+            "kakaoId": item["id"]  # 추가
         })
 
     return places

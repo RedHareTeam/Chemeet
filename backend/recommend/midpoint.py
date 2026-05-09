@@ -41,7 +41,7 @@ def find_best_midpoint(users, radius_expansion=1.0, mode="transit"):
     base_radius = int(math.sqrt(shape.area / math.pi))
     stations = search_places(
         "지하철역", center_lat, center_lng,
-        radius=max(base_radius + 500, 2000), size=10,
+        radius=max(base_radius + 500, 2000), size=5,  # 10 → 5
     )
 
     # 교집합 내부에 있는 역만 후보로 사용

@@ -21,7 +21,7 @@ def get_transit_time(origin_lat, origin_lng, dest_lat, dest_lng):
     }
 
     try:
-        response = requests.get(url, params=params, timeout=5)
+        response = requests.get(url, params=params, timeout=3)  # 5 → 3
 
         #print(response.status_code)
         #print(response.text[:500])
