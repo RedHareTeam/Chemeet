@@ -116,15 +116,12 @@ class CircleService {
 
   // 다시 그리기 — 이번 약속 전부 초기화, status waiting으로
   Future<void> resetRoom(String roomId) async {
-    await _db.collection('rooms').doc(roomId).set(
-      {
-        'status': 'waiting',
-        'places': [],
-        'confirmedPlace': null,
-        'appointmentDate': null,
-      },
-      SetOptions(merge: true),
-    );
+    await _db.collection('rooms').doc(roomId).update({
+      'status': 'waiting',
+      'places': FieldValue.delete(),
+      'confirmedPlace': FieldValue.delete(),
+      'appointmentDate': FieldValue.delete(),
+    });
 
     for (final col in ['circles', 'messages', 'votes']) {
       final snap = await _db
@@ -132,11 +129,15 @@ class CircleService {
           .doc(roomId)
           .collection(col)
           .get();
-      final batch = _db.batch();
-      for (final doc in snap.docs) {
-        batch.delete(doc.reference);
+      const chunkSize = 400;
+      for (int i = 0; i < snap.docs.length; i += chunkSize) {
+        final chunk = snap.docs.skip(i).take(chunkSize);
+        final batch = _db.batch();
+        for (final doc in chunk) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
       }
-      await batch.commit();
     }
   }
 }

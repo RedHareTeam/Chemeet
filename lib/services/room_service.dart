@@ -51,6 +51,7 @@ class RoomService {
     final roomDoc = snap.docs.first;
     final roomId = roomDoc.id;
     final roomRef = _db.collection('rooms').doc(roomId);
+    final userRef = _db.collection('users').doc(myUserId);
 
     String? result;
     await _db.runTransaction((tx) async {
@@ -71,14 +72,12 @@ class RoomService {
         'members': FieldValue.arrayUnion([myUserId]),
         'memberNames.$myUserId': myUserName,
       });
-      result = roomId;
-    });
-
-    if (result == roomId) {
-      await _db.collection('users').doc(myUserId).update({
+      // user doc도 같은 트랜잭션에서 업데이트 (불일치 방지)
+      tx.update(userRef, {
         'rooms': FieldValue.arrayUnion([roomId]),
       });
-    }
+      result = roomId;
+    });
 
     return result;
   }
@@ -164,11 +163,24 @@ class RoomService {
         .doc(roomId)
         .collection(col)
         .get();
-    final batch = _db.batch();
-    for (final doc in snap.docs) {
-      batch.delete(doc.reference);
+    // batch 한도 500개를 초과하지 않도록 400개씩 청크 처리
+    const chunkSize = 400;
+    for (int i = 0; i < snap.docs.length; i += chunkSize) {
+      final chunk = snap.docs.skip(i).take(chunkSize);
+      final batch = _db.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
     }
-    await batch.commit();
+  }
+
+  // 날짜 설정 후 drawing 상태로 전환
+  Future<void> setDrawingStatus(String roomId, DateTime appointmentDate) async {
+    await _db.collection('rooms').doc(roomId).update({
+      'appointmentDate': Timestamp.fromDate(appointmentDate),
+      'status': 'drawing',
+    });
   }
 
   // 방 나가기

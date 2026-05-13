@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'package:chemeet/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import '../services/history_service.dart';
+import '../widgets/glassmorphic_container.dart';
+import '../widgets/gradient_button.dart';
+import '../widgets/platform_html_view.dart';
 
 // ── 데이터 모델 ────────────────────────────────────────────────────────
 class _PlaceGroup {
@@ -82,6 +84,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
   }
 
   List<_PlaceGroup> _groupByPlace(List<Map<String, dynamic>> history) {
+    // 동명이지만 다른 위치의 장소를 구별하기 위해 좌표 기반 키 사용
     final Map<String, _PlaceGroup> groups = {};
     for (final h in history) {
       final place = Map<String, dynamic>.from(h['confirmedPlace'] as Map? ?? {});
@@ -90,10 +93,13 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       final lng   = (place['lng']  as num?)?.toDouble() ?? 0;
       if (name.isEmpty || (lat == 0 && lng == 0)) continue;
 
-      if (groups.containsKey(name)) {
-        groups[name]!.historyEntries.add(h);
+      // 소수점 4자리까지 반올림해 부동소수 오차 허용 (~11m 오차)
+      final key = '${lat.toStringAsFixed(4)}_${lng.toStringAsFixed(4)}';
+
+      if (groups.containsKey(key)) {
+        groups[key]!.historyEntries.add(h);
       } else {
-        groups[name] = _PlaceGroup(
+        groups[key] = _PlaceGroup(
           name:     name,
           lat:      lat,
           lng:      lng,
@@ -136,98 +142,156 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final topPad    = MediaQuery.of(context).padding.top;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('방문 히스토리'),
-        actions: [
-          if (_rawHistory.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.show_chart_rounded),
-              tooltip: '친밀도 변화',
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => _IntimacyGraphSheet(history: _rawHistory),
-              ),
-            ),
-        ],
-      ),
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          _HeatmapMapView(
-            key:         _mapKey,
-            kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
-            onMapReady:  _onMapReady,
-            onPinTapped: _onPinTapped,
+          // 전체 화면 지도
+          Positioned.fill(
+            child: _HeatmapMapView(
+              key:         _mapKey,
+              kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
+              onMapReady:  _onMapReady,
+              onPinTapped: _onPinTapped,
+            ),
           ),
 
-          // 방문 장소 없을 때 안내
+          // ── 상단 오버레이 ──────────────────────────────────
+          Positioned(
+            top: topPad + 8, left: 16, right: 16,
+            child: GlassmorphicContainer(
+              padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: AppTheme.bg,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.chevron_left_rounded,
+                        size: 22,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      '방문 히스토리',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ),
+                  if (_rawHistory.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) =>
+                            _IntimacyGraphSheet(history: _rawHistory),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.show_chart_rounded,
+                                size: 14, color: AppTheme.primary),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '친밀도',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── 빈 상태 ────────────────────────────────────────
           if (_places.isEmpty && _mapReady)
             Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 12)
-                  ],
-                ),
-                child: const Column(
+              child: GlassmorphicContainer(
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.place_outlined, size: 40, color: AppTheme.border),
-                    SizedBox(height: 12),
-                    Text(
+                    Container(
+                      width: 52, height: 52,
+                      decoration: BoxDecoration(
+                        color: AppTheme.bg,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(Icons.place_outlined,
+                          size: 26, color: AppTheme.textMuted),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
                       '아직 방문한 장소가 없어요',
                       style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textDark),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
+                      ),
                     ),
-                    SizedBox(height: 4),
-                    Text(
+                    const SizedBox(height: 4),
+                    const Text(
                       '약속을 확정하면 지도에 기록돼요',
-                      style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                     ),
                   ],
                 ),
               ),
             ),
 
-          // 범례
+          // ── 범례 ──────────────────────────────────────────
           if (_places.isNotEmpty)
             Positioned(
-              bottom: 20 + MediaQuery.of(context).padding.bottom,
+              bottom: bottomPad + 20,
               right: 16,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.95),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 8)
-                  ],
-                ),
+              child: GlassmorphicContainer(
+                borderRadius: BorderRadius.circular(14),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                sigmaX: 10, sigmaY: 10,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('방문 횟수',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textMuted,
-                            fontWeight: FontWeight.w600)),
+                    const Text(
+                      '방문 횟수',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    _legendRow(const Color(0xFF818CF8), '1회'),
+                    _legendRow(AppTheme.primary, '1회'),
                     const SizedBox(height: 4),
-                    _legendRow(const Color(0xFF7C3AED), '2-3회'),
+                    _legendRow(AppTheme.drawing, '2-3회'),
                     const SizedBox(height: 4),
                     _legendRow(AppTheme.accent, '4회+'),
                   ],
@@ -244,9 +308,9 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          width: 8, height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 6),
         Text(label,
             style: const TextStyle(fontSize: 11, color: AppTheme.textDark)),
@@ -273,37 +337,28 @@ class _HeatmapMapView extends StatefulWidget {
 }
 
 class _HeatmapMapViewState extends State<_HeatmapMapView> {
-  late final WebViewController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        'MapReadyChannel',
-        onMessageReceived: (_) => widget.onMapReady(),
-      )
-      ..addJavaScriptChannel(
-        'PinTappedChannel',
-        onMessageReceived: (msg) => widget.onPinTapped(msg.message),
-      )
-      ..addJavaScriptChannel(
-        'Console',
-        onMessageReceived: (msg) => debugPrint('HeatmapJS: ${msg.message}'),
-      )
-      ..loadHtmlString(_buildHtml());
-  }
+  PlatformHtmlViewController? _ctrl;
 
   void updateData(List<_PlaceGroup> places) {
     final json    = jsonEncode(places.map((p) => p.toJson()).toList());
     final encoded = Uri.encodeComponent(json);
-    _controller.runJavaScript(
+    _ctrl?.runJavaScript(
         'updateMapData(JSON.parse(decodeURIComponent("$encoded")))');
   }
 
   @override
-  Widget build(BuildContext context) => WebViewWidget(controller: _controller);
+  Widget build(BuildContext context) {
+    return PlatformHtmlView(
+      html: _buildHtml(),
+      webUrl: '/heatmap_bridge.html?appkey=${widget.kakaoApiKey}',
+      channels: {
+        'MapReadyChannel': (_) => widget.onMapReady(),
+        'PinTappedChannel': (msg) => widget.onPinTapped(msg),
+        'Console': (msg) => debugPrint('HeatmapJS: $msg'),
+      },
+      onCreated: (ctrl) => _ctrl = ctrl,
+    );
+  }
 
   String _buildHtml() => '''
 <!DOCTYPE html>
@@ -324,17 +379,19 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
       transform:translate(-50%,-100%);
     }
     .pin-circle {
-      width:44px; height:44px; border-radius:50%;
+      width:46px; height:46px; border-radius:50%;
       display:flex; align-items:center; justify-content:center; flex-direction:column;
-      color:white; box-shadow:0 3px 10px rgba(0,0,0,0.25); border:2.5px solid white;
+      color:white; box-shadow:0 4px 14px rgba(0,0,0,0.18); border:2.5px solid rgba(255,255,255,0.9);
     }
-    .pin-count { font-size:15px; font-weight:700; line-height:1; }
-    .pin-unit  { font-size:8px; opacity:0.85; margin-top:1px; }
+    .pin-count { font-size:15px; font-weight:800; line-height:1; }
+    .pin-unit  { font-size:8px; opacity:0.9; margin-top:1px; font-weight:600; }
     .pin-tail  { width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; margin-top:-1px; }
     .pin-label {
-      background:rgba(28,28,46,0.72); color:white; font-size:10px;
-      padding:2px 7px; border-radius:6px; margin-top:4px;
-      max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      background:rgba(28,28,46,0.78); color:white; font-size:11px; font-weight:600;
+      padding:3px 8px; border-radius:8px; margin-top:5px;
+      max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      border:1px solid rgba(255,255,255,0.12);
+      -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
     }
     .cpin {
       position:absolute; pointer-events:auto; cursor:pointer;
@@ -343,14 +400,16 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
     }
     .cpin-circle {
       border-radius:50%; display:flex; align-items:center; justify-content:center; flex-direction:column;
-      color:white; border:3px solid white;
-      box-shadow:0 3px 14px rgba(0,0,0,0.22);
+      color:white; border:3px solid rgba(255,255,255,0.9);
+      box-shadow:0 4px 16px rgba(0,0,0,0.2);
     }
     .cpin-num   { font-weight:800; line-height:1; }
-    .cpin-sub   { font-size:9px; opacity:0.85; }
+    .cpin-sub   { font-size:9px; opacity:0.9; font-weight:600; }
     .cpin-badge {
-      background:rgba(28,28,46,0.72); color:white; font-size:10px;
-      padding:2px 8px; border-radius:6px; margin-top:5px; white-space:nowrap;
+      background:rgba(28,28,46,0.78); color:white; font-size:11px; font-weight:600;
+      padding:3px 9px; border-radius:8px; margin-top:5px; white-space:nowrap;
+      border:1px solid rgba(255,255,255,0.12);
+      -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
     }
   </style>
 </head>
@@ -608,8 +667,8 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
       map.setBounds(b, 100);
     }
 
-    function heatRgb(c) { return c>=4?'255,95,126':c>=2?'124,58,237':'129,140,248'; }
-    function pinColor(c) { return c>=4?'#FF5F7E':c>=2?'#7C3AED':'#818CF8'; }
+    function heatRgb(c) { return c>=4?'255,95,126':c>=2?'157,142,255':'255,155,222'; }
+    function pinColor(c) { return c>=4?'#FF5F7E':c>=2?'#9D8EFF':'#FF9BDE'; }
     function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
   </script>
 </body>
@@ -694,7 +753,7 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
       builder: (_, scrollCtrl) => Container(
         decoration: const BoxDecoration(
           color: AppTheme.bg,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           children: [
@@ -707,69 +766,84 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                   borderRadius: BorderRadius.circular(2)),
             ),
 
-            // 장소 헤더
+            // 장소 헤더 카드
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
                     ),
-                    child: Icon(Icons.place_rounded, color: color, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _group.name,
-                          style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textDark),
-                        ),
-                        if (_group.address.isNotEmpty)
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48, height: 48,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(Icons.place_rounded, color: color, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            _group.address,
+                            _group.name,
                             style: const TextStyle(
-                                fontSize: 12, color: AppTheme.textMuted),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textDark),
                           ),
-                      ],
+                          if (_group.address.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              _group.address,
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppTheme.textMuted),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${_group.count}회',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                        ),
+                      ),
                     ),
-                    child: Text(
-                      '${_group.count}회 방문',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: color),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-
-            const Divider(height: 1),
 
             // 방문 목록
             Expanded(
               child: ListView.builder(
                 controller: scrollCtrl,
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 32),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
                 itemCount: _group.historyEntries.length,
                 itemBuilder: (_, i) {
                   final entry     = _group.historyEntries[i];
@@ -819,7 +893,16 @@ class _VisitCard extends StatefulWidget {
 }
 
 class _VisitCardState extends State<_VisitCard> {
-  bool _deleting = false;
+  bool _deleting    = false;
+  bool _showInput   = false;
+  bool _submitting  = false;
+  final _reviewCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _reviewCtrl.dispose();
+    super.dispose();
+  }
 
   String _formatDate(DateTime dt) {
     const wds = ['월', '화', '수', '목', '금', '토', '일'];
@@ -836,13 +919,11 @@ class _VisitCardState extends State<_VisitCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소',
-                style: TextStyle(color: AppTheme.textMuted)),
+            child: const Text('취소', style: TextStyle(color: AppTheme.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제',
-                style: TextStyle(color: AppTheme.error)),
+            child: const Text('삭제', style: TextStyle(color: AppTheme.error)),
           ),
         ],
       ),
@@ -857,19 +938,24 @@ class _VisitCardState extends State<_VisitCard> {
     }
   }
 
-  void _showAddRecord() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AddRecordSheet(
-        roomId:         widget.roomId,
-        historyId:      widget.historyId,
-        userId:         widget.myUserId,
-        userName:       widget.myUserName,
-        historyService: widget.historyService,
-      ),
-    );
+  Future<void> _submitRecord() async {
+    if (_reviewCtrl.text.trim().isEmpty || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await widget.historyService.addRecord(
+        roomId:    widget.roomId,
+        historyId: widget.historyId,
+        userId:    widget.myUserId,
+        userName:  widget.myUserName,
+        review:    _reviewCtrl.text.trim(),
+      );
+      if (mounted) {
+        _reviewCtrl.clear();
+        setState(() { _showInput = false; _submitting = false; });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
@@ -878,52 +964,76 @@ class _VisitCardState extends State<_VisitCard> {
       opacity: _deleting ? 0.4 : 1.0,
       duration: const Duration(milliseconds: 200),
       child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.border),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           children: [
             // 날짜 행
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
               child: Row(
                 children: [
-                  const Icon(Icons.calendar_today_outlined,
-                      size: 14, color: AppTheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    widget.date != null
-                        ? _formatDate(widget.date!)
-                        : '날짜 미정',
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textDark),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.calendar_today_outlined,
+                            size: 12, color: AppTheme.primary),
+                        const SizedBox(width: 5),
+                        Text(
+                          widget.date != null
+                              ? _formatDate(widget.date!)
+                              : '날짜 미정',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const Spacer(),
                   if (_deleting)
                     const SizedBox(
-                        width: 16,
-                        height: 16,
+                        width: 16, height: 16,
                         child: CircularProgressIndicator(
                             color: AppTheme.primary, strokeWidth: 2))
                   else
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded,
-                          size: 18, color: AppTheme.textMuted),
-                      onPressed: _confirmDelete,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 36, minHeight: 36),
+                    GestureDetector(
+                      onTap: _confirmDelete,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppTheme.bg,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.delete_outline_rounded,
+                            size: 16, color: AppTheme.textMuted),
+                      ),
                     ),
                 ],
               ),
             ),
 
-            const Divider(height: 1, indent: 16, endIndent: 16),
+            const Divider(height: 1, color: AppTheme.border,
+                indent: 14, endIndent: 14),
 
             // 기록 목록
             StreamBuilder<List<Map<String, dynamic>>>(
@@ -942,30 +1052,128 @@ class _VisitCardState extends State<_VisitCard> {
                                   widget.historyId,
                                   r['recordId'] as String),
                         )),
-                    // 기록 추가 버튼
-                    InkWell(
-                      onTap: _showAddRecord,
-                      borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.add_circle_outline,
-                                size: 16, color: AppTheme.primary),
-                            const SizedBox(width: 6),
-                            const Text(
-                              '기록 남기기',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.primary),
+                    // 인라인 입력 / 기록 추가 버튼
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOut,
+                      child: _showInput
+                          ? Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  TextField(
+                                    controller: _reviewCtrl,
+                                    maxLines: 3,
+                                    autofocus: true,
+                                    onChanged: (_) => setState(() {}),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppTheme.textDark,
+                                        height: 1.6),
+                                    decoration: InputDecoration(
+                                      hintText: '이 장소에서의 기억을 남겨보세요...',
+                                      hintStyle: const TextStyle(
+                                          color: AppTheme.textMuted,
+                                          fontSize: 13),
+                                      filled: true,
+                                      fillColor: AppTheme.bg,
+                                      contentPadding: const EdgeInsets.all(12),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                            color: AppTheme.border),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                            color: AppTheme.primary,
+                                            width: 1.5),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: GestureDetector(
+                                          onTap: () => setState(() {
+                                            _showInput = false;
+                                            _reviewCtrl.clear();
+                                          }),
+                                          child: Container(
+                                            height: 40,
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.bg,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: const Center(
+                                              child: Text(
+                                                '취소',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.textMuted,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        flex: 2,
+                                        child: GradientButton(
+                                          onTap: _submitRecord,
+                                          enabled: _reviewCtrl.text.trim().isNotEmpty,
+                                          loading: _submitting,
+                                          height: 40,
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: const Text(
+                                            '저장',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            )
+                          : GestureDetector(
+                              onTap: () => setState(() => _showInput = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary
+                                      .withValues(alpha: 0.04),
+                                  borderRadius: const BorderRadius.vertical(
+                                      bottom: Radius.circular(20)),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add_circle_outline,
+                                        size: 15, color: AppTheme.primary),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      '기록 남기기',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
                     ),
                   ],
                 );
@@ -1138,7 +1346,7 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + bottomInset),
       child: Column(
@@ -1156,12 +1364,28 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
           ),
           const SizedBox(height: 20),
 
-          const Text(
-            '기록 남기기',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textDark),
+          Row(
+            children: [
+              Container(
+                width: 38, height: 38,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.edit_note_rounded,
+                    color: AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                '기록 남기기',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textDark,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -1170,21 +1394,27 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
             controller: _reviewCtrl,
             maxLines:   4,
             onChanged:  (_) => setState(() {}),
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppTheme.textDark,
+              height: 1.6,
+            ),
             decoration: InputDecoration(
               hintText: '이 장소에서의 기억을 남겨보세요...',
+              hintStyle: const TextStyle(
+                  color: AppTheme.textMuted, fontSize: 14),
               filled: true,
               fillColor: AppTheme.bg,
               contentPadding: const EdgeInsets.all(14),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppTheme.border)),
               enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppTheme.border)),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppTheme.border),
+              ),
               focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: AppTheme.primary, width: 1.5)),
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    const BorderSide(color: AppTheme.primary, width: 1.5),
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -1192,26 +1422,41 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
           // 저장 버튼
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _canSubmit && !_loading ? _submit : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: AppTheme.disabledBg,
-                disabledForegroundColor: AppTheme.disabled,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-                elevation: 0,
+            height: 52,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: _canSubmit
+                    ? const LinearGradient(
+                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      )
+                    : null,
+                color: _canSubmit ? null : AppTheme.disabled,
+                borderRadius: BorderRadius.circular(16),
               ),
-              child: _loading
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2))
-                  : const Text('저장',
-                      style: TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w700)),
+              child: ElevatedButton(
+                onPressed: _canSubmit && !_loading ? _submit : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                ),
+                child: _loading
+                    ? const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Text(
+                        '저장',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700),
+                      ),
+              ),
             ),
           ),
         ],

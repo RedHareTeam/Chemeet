@@ -4,8 +4,10 @@ import 'package:chemeet/screens/heatmap_screen.dart';
 import 'package:chemeet/screens/place_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/auth_service.dart';
+import '../services/history_service.dart';
 import '../services/room_service.dart';
+import '../widgets/app_dialog.dart';
+import '../widgets/glassmorphic_container.dart';
 import 'date_setting_screen.dart';
 import 'map_screen.dart';
 import 'upload_screen.dart';
@@ -30,9 +32,8 @@ class RoomHomeScreen extends StatefulWidget {
 
 class _RoomHomeScreenState extends State<RoomHomeScreen>
     with SingleTickerProviderStateMixin {
-  final _roomService = RoomService();
-  final _authService = AuthService();
-
+  final _roomService    = RoomService();
+  final _historyService = HistoryService();
   late AnimationController _scoreAnim;
   late Animation<int> _scoreCounter;
 
@@ -41,26 +42,19 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
   Map<String, dynamic>? _roomData;
   StreamSubscription? _roomSub;
 
-  // Firestore에서 읽어온 분석 데이터
   int _intimacyScore = 0;
   List<String> _keywords = [];
-  String _partnerName = '';
   bool _analysisReady = false;
 
   @override
   void initState() {
     super.initState();
-
     _scoreAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    // 초기엔 0→0, 데이터 로드 후 재설정
-    _scoreCounter = IntTween(
-      begin: 0,
-      end: 0,
-    ).animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
-
+    _scoreCounter = IntTween(begin: 0, end: 0)
+        .animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
     _watchRoom();
     _watchSchedules();
   }
@@ -68,18 +62,13 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
   void _watchRoom() {
     _roomSub = _roomService.watchRoom(widget.roomId).listen((room) {
       if (room == null) return;
-
       final newScore = (room['intimacyScore'] as num?)?.toInt() ?? 0;
       final newKeywords = List<String>.from(room['keywords'] ?? []);
-      final newPartnerName = room['partnerName'] as String? ?? '';
 
-      // 분석 데이터가 새로 들어왔을 때만 애니메이션 재실행
       if (newScore != _intimacyScore || !_analysisReady) {
         _scoreAnim.reset();
-        _scoreCounter = IntTween(
-          begin: 0,
-          end: newScore,
-        ).animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
+        _scoreCounter = IntTween(begin: 0, end: newScore)
+            .animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
         Future.delayed(const Duration(milliseconds: 400), () {
           if (mounted) _scoreAnim.forward();
         });
@@ -89,14 +78,13 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         _roomData = room;
         _intimacyScore = newScore;
         _keywords = newKeywords;
-        _partnerName = newPartnerName;
-        _analysisReady = newScore > 0 || newKeywords.isNotEmpty;
+        _analysisReady = room.containsKey('intimacyScore');
       });
     });
   }
 
   void _watchSchedules() {
-    _scheduleSub = _roomService.watchHistory(widget.roomId).listen((history) {
+    _scheduleSub = _historyService.watchHistory(widget.roomId).listen((history) {
       final now = DateTime.now();
       final upcoming = history.where((h) {
         final dateTs = h['appointmentDate'];
@@ -116,9 +104,9 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
   }
 
   Color _intimacyColor(int score) {
-    if (score >= 80) return AppTheme.primary;
-    if (score >= 60) return AppTheme.drawing;
-    if (score >= 40) return AppTheme.accent;
+    if (score >= 80) return AppTheme.intimacyTop;
+    if (score >= 60) return AppTheme.intimacyHigh;
+    if (score >= 40) return AppTheme.intimacyMid;
     return AppTheme.intimacyLow;
   }
 
@@ -134,117 +122,15 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     return days[(wd - 1) % 7];
   }
 
-  void _showRoomMenu() {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
-              child: Text(
-                '메뉴',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textDark,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const Divider(height: 1),
-            InkWell(
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        UploadScreen(isReAnalyze: true, roomId: widget.roomId),
-                  ),
-                );
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.refresh_rounded,
-                      color: AppTheme.primary,
-                      size: 22,
-                    ),
-                    SizedBox(width: 14),
-                    Text(
-                      '리포트 업데이트',
-                      style: TextStyle(fontSize: 15, color: AppTheme.textDark),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            InkWell(
-              onTap: () {
-                Navigator.pop(context);
-                _confirmLeave();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.logout_rounded, color: AppTheme.error, size: 22),
-                    const SizedBox(width: 14),
-                    Text(
-                      '방 나가기',
-                      style: TextStyle(fontSize: 15, color: AppTheme.error),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppTheme.border),
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  '취소',
-                  style: TextStyle(fontSize: 14, color: AppTheme.textMuted),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _confirmLeave() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => _SimpleDialog(
+      builder: (_) => AppDialog(
         title: '방 나가기',
-        content:
-            '방을 나가면 다시 초대 코드로 입장해야 해요.\n지도/투표 진행 중이라면 내용이 초기화됩니다.\n\n정말 나가시겠어요?',
+        content: '방을 나가면 다시 초대 코드로 입장해야 해요.\n지도/투표 진행 중이라면 내용이 초기화됩니다.\n\n정말 나가시겠어요?',
         actions: [
-          _DialogAction(
-            label: '취소',
-            onTap: () => Navigator.pop(context, false),
-          ),
-          _DialogAction(
+          DialogAction(label: '취소', onTap: () => Navigator.pop(context, false)),
+          DialogAction(
             label: '나가기',
             primary: true,
             destructive: true,
@@ -254,12 +140,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
       ),
     );
     if (confirm != true || !mounted) return;
-
-    await _roomService.leaveRoom(
-      roomId: widget.roomId,
-      userId: widget.myUserId,
-    );
-
+    await _roomService.leaveRoom(roomId: widget.roomId, userId: widget.myUserId);
     if (mounted) Navigator.pop(context);
   }
 
@@ -271,562 +152,585 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     super.dispose();
   }
 
+  // ── 메인 액션 파라미터 ────────────────────────────────────
+  _ActionParams _resolveAction() {
+    final status = _roomData?['status'] ?? 'idle';
+    final members = List<String>.from(_roomData?['members'] ?? []);
+    final isFull = members.length >= widget.maxMembers;
+
+    if (status == 'voting') {
+      return _ActionParams(
+        label: '장소 투표 참여하기',
+        icon: Icons.how_to_vote_outlined,
+        colors: [AppTheme.accent, const Color(0xFFFFAA88)],
+        enabled: true,
+        onTap: () {
+          final places = List<Map<String, dynamic>>.from(_roomData?['places'] ?? []);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => PlaceScreen(
+              roomId: widget.roomId,
+              userId: widget.myUserId,
+              userName: widget.myUserName,
+              members: members,
+              places: places,
+            ),
+          ));
+        },
+      );
+    }
+
+    if (status == 'drawing' && _roomData?['appointmentDate'] != null) {
+      return _ActionParams(
+        label: '지도 보러 가기',
+        icon: Icons.map_outlined,
+        colors: [AppTheme.drawing, const Color(0xFF7BB8FF)],
+        enabled: true,
+        onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => MapScreen(
+            roomId: widget.roomId,
+            myUserId: widget.myUserId,
+            myUserName: widget.myUserName,
+            members: members,
+          ),
+        )),
+      );
+    }
+
+    if (!isFull) {
+      return _ActionParams(
+        label: '${widget.maxMembers - members.length}명 더 참여해야 약속을 만들 수 있어요',
+        icon: Icons.group_outlined,
+        colors: [AppTheme.disabled, AppTheme.disabled],
+        enabled: false,
+        onTap: null,
+      );
+    }
+
+    return _ActionParams(
+      label: '약속 만들기',
+      icon: Icons.add_circle_outline,
+      colors: [AppTheme.primary, const Color(0xFFFF7BAC)],
+      enabled: true,
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => DateSettingScreen(
+          roomId: widget.roomId,
+          myUserId: widget.myUserId,
+          myUserName: widget.myUserName,
+          maxMembers: widget.maxMembers,
+          members: members,
+        ),
+      )),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final botPad = MediaQuery.of(context).padding.bottom;
     final inviteCode = _roomData?['inviteCode'] ?? '';
-    final currentMembers = List<String>.from(
-      _roomData?['members'] ?? [widget.myUserId],
-    );
+    final currentMembers = List<String>.from(_roomData?['members'] ?? [widget.myUserId]);
+    final memberNames = Map<String, dynamic>.from(_roomData?['memberNames'] ?? {});
     final isFull = currentMembers.length >= widget.maxMembers;
+    final action = _resolveAction();
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(
-        title: Text(_roomData?['roomTitle'] ?? 'Chemeet'),
-        actions: [
-          if (inviteCode.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: inviteCode));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('초대 코드 $inviteCode 복사됨')),
-                );
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
+      body: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: AppTheme.bg,
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                automaticallyImplyLeading: false,
+                centerTitle: false,
+                titleSpacing: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded,
+                      size: 28, color: AppTheme.textDark),
+                  onPressed: () => Navigator.pop(context),
                 ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
+                title: Text(
+                  _roomData?['roomTitle'] ?? '',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                    letterSpacing: -0.3,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.tag, size: 14, color: Colors.white70),
-                    const SizedBox(width: 4),
-                    Text(
-                      inviteCode,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
+                actions: [
+                  if (inviteCode.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: inviteCode));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('초대 코드 $inviteCode 복사됨')),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.tag,
+                                  size: 13, color: AppTheme.primary),
+                              const SizedBox(width: 3),
+                              Text(
+                                inviteCode,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.primary,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.more_horiz_rounded),
-            onPressed: _showRoomMenu,
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ─── 참여 인원 현황 ───────────────────────────
-            Builder(
-              builder: (_) {
-                final memberNames = Map<String, dynamic>.from(
-                  _roomData?['memberNames'] ?? {},
-                );
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isFull ? AppTheme.primaryBg : AppTheme.accentBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isFull
-                          ? AppTheme.primary.withValues(alpha: 0.3)
-                          : AppTheme.accent.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            isFull ? Icons.group : Icons.group_outlined,
-                            color: isFull ? AppTheme.primary : AppTheme.accent,
-                            size: 20,
+
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, botPad + 100),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+
+                    // ── 멤버 현황 카드 ──
+                    GlassmorphicContainer(
+                      padding: const EdgeInsets.all(16),
+                      backgroundAlpha: 0.75,
+                      child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    isFull ? Icons.group_rounded : Icons.group_outlined,
+                                    size: 18,
+                                    color: isFull ? AppTheme.primary : AppTheme.textMuted,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    isFull
+                                        ? '${currentMembers.length}/${widget.maxMembers}명 모두 참여했어요!'
+                                        : '${currentMembers.length}/${widget.maxMembers}명 참여 중 · 친구를 초대하세요',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: isFull ? AppTheme.primary : AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (currentMembers.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    widget.myUserId,
+                                    ...currentMembers.where((uid) => uid != widget.myUserId),
+                                  ].map((uid) {
+                                    final name = memberNames[uid] as String? ?? uid;
+                                    final isMe = uid == widget.myUserId;
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        gradient: isMe
+                                            ? const LinearGradient(
+                                                colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                              )
+                                            : null,
+                                        color: isMe ? null : AppTheme.bg,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: isMe ? null : Border.all(color: AppTheme.border),
+                                      ),
+                                      child: Text(
+                                        isMe ? '$name (나)' : name,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: isMe ? Colors.white : AppTheme.textDark,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            isFull
-                                ? '${currentMembers.length}/${widget.maxMembers}명 모두 참여했어요!'
-                                : '${currentMembers.length}/${widget.maxMembers}명 참여 중 · 초대 코드로 친구를 초대하세요',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: isFull
-                                  ? AppTheme.primary
-                                  : AppTheme.accent,
-                            ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // ── 친밀도 리포트 카드 ──
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
-                      if (currentMembers.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children:
-                              ([
-                                widget.myUserId,
-                                ...currentMembers.where(
-                                  (uid) => uid != widget.myUserId,
-                                ),
-                              ]).map((uid) {
-                                final name = memberNames[uid] as String? ?? uid;
-                                final isMe = uid == widget.myUserId;
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isMe
-                                        ? AppTheme.primary
-                                        : AppTheme.surface,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: isMe
-                                          ? AppTheme.primary
-                                          : AppTheme.border,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    isMe ? '$name (나)' : name,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: isMe
-                                          ? Colors.white
-                                          : AppTheme.textDark,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              },
-            ),
+                      child: _analysisReady ? _buildAnalysisContent() : _buildAnalysisLoading(),
+                    ),
 
-            const SizedBox(height: 20),
+                    const SizedBox(height: 14),
 
-            // ─── 친밀도 분석 리포트 ───────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: _analysisReady
-                  ? _buildAnalysisContent()
-                  : _buildAnalysisLoading(),
-            ),
-
-            const SizedBox(height: 24),
-
-            // ─── 메인 액션 버튼 (상태별) ─────────────────
-            Builder(
-              builder: (_) {
-                final status = _roomData?['status'] ?? 'idle';
-                final members = List<String>.from(_roomData?['members'] ?? []);
-
-                String label;
-                IconData icon;
-                Color color;
-                bool enabled;
-                VoidCallback? onTap;
-
-                if (status == 'voting') {
-                  label = '장소 투표 진행 중 · 참여하기';
-                  icon = Icons.how_to_vote_outlined;
-                  color = AppTheme.accent;
-                  enabled = true;
-                  onTap = () {
-                    final places = List<Map<String, dynamic>>.from(
-                      _roomData?['places'] ?? [],
-                    );
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PlaceScreen(
+                    // ── 방문 히스토리 지도 ──
+                    GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => HeatmapScreen(
                           roomId: widget.roomId,
-                          userId: widget.myUserId,
-                          userName: widget.myUserName,
-                          members: members,
-                          places: places,
+                          myUserId: widget.myUserId,
+                          myUserName: widget.myUserName,
                         ),
-                      ),
-                    );
-                  };
-                } else if (status == 'drawing' &&
-                    _roomData?['appointmentDate'] != null) {
-                  label = '약속을 정하는 중이에요 · 지도 보기';
-                  icon = Icons.map_outlined;
-                  color = AppTheme.drawing;
-                  enabled = true;
-                  onTap = () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => MapScreen(
-                        roomId: widget.roomId,
-                        myUserId: widget.myUserId,
-                        myUserName: widget.myUserName,
-                        members: members,
-                      ),
-                    ),
-                  );
-                } else if (!isFull) {
-                  label =
-                      '${widget.maxMembers - members.length}명 더 참여해야 약속을 만들 수 있어요';
-                  icon = Icons.group_outlined;
-                  color = AppTheme.disabled;
-                  enabled = false;
-                  onTap = null;
-                } else {
-                  label = '약속 만들기';
-                  icon = Icons.add_circle_outline;
-                  color = AppTheme.primary;
-                  enabled = true;
-                  onTap = () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => DateSettingScreen(
-                        roomId: widget.roomId,
-                        myUserId: widget.myUserId,
-                        myUserName: widget.myUserName,
-                        maxMembers: widget.maxMembers,
-                        members: currentMembers,
-                      ),
-                    ),
-                  );
-                }
-
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: enabled ? color : AppTheme.disabledBg,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: enabled
-                        ? [
-                            BoxShadow(
-                              color: color.withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: onTap,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              icon,
-                              color: enabled ? Colors.white : AppTheme.disabled,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                label,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: enabled
-                                      ? Colors.white
-                                      : AppTheme.disabled,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 28),
-
-            // ─── 방문 히스토리 지도 ────────────────────────
-            GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => HeatmapScreen(
-                    roomId: widget.roomId,
-                    myUserId: widget.myUserId,
-                    myUserName: widget.myUserName,
-                  ),
-                ),
-              ),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryBg,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.map_rounded,
-                        color: AppTheme.primary,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '방문 히스토리 지도',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.textDark,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          '다녀온 장소를 지도로 확인해요',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: AppTheme.border,
-                      size: 20,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ─── 다가오는 약속 ────────────────────────────
-            Text(
-              '다가오는 약속',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textDark,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            if (_schedules.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.calendar_today_outlined,
-                      size: 36,
-                      color: AppTheme.border,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '아직 약속이 없어요\n위 버튼으로 첫 약속을 잡아보세요!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textMuted,
-                        height: 1.6,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              ...List.generate(_schedules.length, (i) {
-                final s = _schedules[i];
-                final place = Map<String, dynamic>.from(
-                  s['confirmedPlace'] as Map? ?? {},
-                );
-                final dateTs = s['appointmentDate'];
-                final date = ((dateTs as dynamic).toDate() as DateTime)
-                    .toLocal();
-                final isNext = i == 0;
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isNext
-                          ? AppTheme.primary.withValues(alpha: 0.4)
-                          : AppTheme.border,
-                      width: isNext ? 1.5 : 1,
-                    ),
-                    boxShadow: isNext
-                        ? [
-                            BoxShadow(
-                              color: AppTheme.primary.withValues(alpha: 0.08),
-                              blurRadius: 12,
-                              offset: const Offset(0, 3),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
+                      )),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: isNext ? AppTheme.primaryBg : AppTheme.bg,
-                          borderRadius: BorderRadius.circular(12),
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppTheme.border),
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        child: Row(
                           children: [
-                            Text(
-                              '${date.month}/${date.day}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: isNext
-                                    ? AppTheme.primary
-                                    : AppTheme.textMuted,
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [AppTheme.primary, Color(0xFF9B8BFF)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.map_rounded, color: Colors.white, size: 20),
+                            ),
+                            const SizedBox(width: 14),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '방문 히스토리 지도',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.textDark,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    '다녀온 장소를 지도로 확인해요',
+                                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                  ),
+                                ],
                               ),
                             ),
-                            Text(
-                              _weekdayLabel(date.weekday),
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: isNext
-                                    ? AppTheme.primary
-                                    : AppTheme.disabled,
-                              ),
-                            ),
+                            const Icon(Icons.chevron_right_rounded, color: AppTheme.border, size: 20),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // ── 다가오는 약속 ──
+                    const Text(
+                      '다가오는 약속',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (_schedules.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTheme.border),
+                        ),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (isNext)
-                              Text(
-                                'D-DAY 가장 가까운 약속',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppTheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            Text(
-                              place['name'] ?? '장소 미정',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            Text(
-                              place['address'] ?? '',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.textMuted,
-                              ),
-                              overflow: TextOverflow.ellipsis,
+                            const Icon(Icons.calendar_today_outlined, size: 34, color: AppTheme.border),
+                            const SizedBox(height: 10),
+                            const Text(
+                              '아직 약속이 없어요\n아래 버튼으로 첫 약속을 잡아보세요!',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.6),
                             ),
                           ],
+                        ),
+                      )
+                    else
+                      ...List.generate(_schedules.length, (i) {
+                        final s = _schedules[i];
+                        final place = Map<String, dynamic>.from(s['confirmedPlace'] as Map? ?? {});
+                        final date = ((s['appointmentDate'] as dynamic).toDate() as DateTime).toLocal();
+                        final isNext = i == 0;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isNext
+                                  ? AppTheme.primary.withValues(alpha: 0.35)
+                                  : AppTheme.border,
+                              width: isNext ? 1.5 : 1,
+                            ),
+                            boxShadow: isNext
+                                ? [BoxShadow(
+                                    color: AppTheme.primary.withValues(alpha: 0.08),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 3),
+                                  )]
+                                : [],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  gradient: isNext
+                                      ? const LinearGradient(
+                                          colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        )
+                                      : null,
+                                  color: isNext ? null : AppTheme.bg,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '${date.month}/${date.day}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isNext ? Colors.white : AppTheme.textMuted,
+                                      ),
+                                    ),
+                                    Text(
+                                      _weekdayLabel(date.weekday),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: isNext ? Colors.white70 : AppTheme.disabled,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (isNext)
+                                      const Text(
+                                        '가장 가까운 약속',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: AppTheme.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    Text(
+                                      place['name'] ?? '장소 미정',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: AppTheme.textDark,
+                                      ),
+                                    ),
+                                    Text(
+                                      place['address'] ?? '',
+                                      style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                  ]),
+                ),
+              ),
+            ],
+          ),
+
+          // ── 하단 플로팅 툴바 ──
+          Positioned(
+            bottom: botPad + 16,
+            left: 16,
+            right: 16,
+            child: GlassmorphicContainer(
+              borderRadius: BorderRadius.circular(28),
+              sigmaX: 20, sigmaY: 20,
+              backgroundAlpha: 0.72,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primary.withValues(alpha: 0.12),
+                  blurRadius: 28,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+              child: Row(
+                    children: [
+                      // 더보기 메뉴
+                      PopupMenuButton<String>(
+                        onSelected: (v) {
+                          if (v == 'report') {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => UploadScreen(isReAnalyze: true, roomId: widget.roomId),
+                            ));
+                          }
+                          if (v == 'leave') _confirmLeave();
+                        },
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        offset: const Offset(0, -112),
+                        child: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: AppTheme.bg,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: const Icon(Icons.more_horiz_rounded, color: AppTheme.textMuted, size: 22),
+                        ),
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(
+                            value: 'report',
+                            child: Row(children: [
+                              Icon(Icons.refresh_rounded, size: 18, color: AppTheme.primary),
+                              SizedBox(width: 10),
+                              Text('리포트 업데이트'),
+                            ]),
+                          ),
+                          const PopupMenuItem(
+                            value: 'leave',
+                            child: Row(children: [
+                              Icon(Icons.logout_rounded, size: 18, color: AppTheme.error),
+                              SizedBox(width: 10),
+                              Text('방 나가기', style: TextStyle(color: AppTheme.error)),
+                            ]),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 10),
+
+                      // 메인 액션 버튼
+                      Expanded(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          height: 50,
+                          decoration: BoxDecoration(
+                            gradient: action.enabled
+                                ? LinearGradient(
+                                    colors: action.colors,
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                  )
+                                : null,
+                            color: action.enabled ? null : AppTheme.disabledBg,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: action.enabled
+                                ? [BoxShadow(
+                                    color: action.colors.first.withValues(alpha: 0.32),
+                                    blurRadius: 14,
+                                    offset: const Offset(0, 4),
+                                  )]
+                                : [],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: action.onTap,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      action.icon,
+                                      color: action.enabled ? Colors.white : AppTheme.disabled,
+                                      size: 19,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        action.label,
+                                        textAlign: TextAlign.center,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: action.enabled ? Colors.white : AppTheme.disabled,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                );
-              }),
-
-            const SizedBox(height: 32),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // ── 분석 결과 위젯 ────────────────────────────────────
+  // ── 친밀도 분석 결과 ──────────────────────────────────────
   Widget _buildAnalysisContent() {
+    final color = _intimacyColor(_intimacyScore);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              '친밀도 분석 리포트',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textDark,
-              ),
-            ),
-          ],
+        const Text(
+          '친밀도 분석 리포트',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textDark),
         ),
         const SizedBox(height: 20),
 
-        // 점수
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -837,24 +741,20 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                 style: TextStyle(
                   fontSize: 52,
                   fontWeight: FontWeight.bold,
-                  color: _intimacyColor(_intimacyScore),
+                  color: color,
                   height: 1,
                 ),
               ),
             ),
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                ' / 100',
-                style: TextStyle(fontSize: 18, color: AppTheme.textMuted),
-              ),
+              child: Text(' / 100', style: TextStyle(fontSize: 18, color: AppTheme.textMuted)),
             ),
           ],
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
 
-        // 게이지 바
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: AnimatedBuilder(
@@ -862,39 +762,28 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
             builder: (_, __) => LinearProgressIndicator(
               value: _scoreAnim.value * (_intimacyScore / 100),
               backgroundColor: AppTheme.border,
-              valueColor: AlwaysStoppedAnimation(
-                _intimacyColor(_intimacyScore),
-              ),
-              minHeight: 10,
+              valueColor: AlwaysStoppedAnimation(color),
+              minHeight: 8,
             ),
           ),
         ),
 
-        const SizedBox(height: 10),
-
+        const SizedBox(height: 8),
         Text(
           _intimacyLabel(_intimacyScore),
-          style: TextStyle(
-            fontSize: 13,
-            color: _intimacyColor(_intimacyScore),
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w600),
         ),
 
         const SizedBox(height: 20),
         const Divider(height: 1),
         const SizedBox(height: 16),
 
-        // 취향 키워드
-        Text(
+        const Text(
           '취향 키워드',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textDark,
-          ),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textDark),
         ),
         const SizedBox(height: 10),
+
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -902,14 +791,14 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: AppTheme.primaryBg,
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
                 '# $kw',
                 style: TextStyle(
                   fontSize: 13,
-                  color: AppTheme.primary,
+                  color: color,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -920,28 +809,20 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     );
   }
 
-  // ── 분석 대기 중 스켈레톤 ─────────────────────────────
   Widget _buildAnalysisLoading() {
-    return Column(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           '친밀도 분석 리포트',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textDark,
-          ),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textDark),
         ),
-        const SizedBox(height: 20),
+        SizedBox(height: 20),
         Center(
           child: Column(
             children: [
-              CircularProgressIndicator(
-                color: AppTheme.primary,
-                strokeWidth: 2,
-              ),
-              const SizedBox(height: 12),
+              CircularProgressIndicator(color: AppTheme.primary, strokeWidth: 2),
+              SizedBox(height: 12),
               Text(
                 '분석 결과를 불러오는 중이에요...',
                 style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
@@ -949,120 +830,25 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
             ],
           ),
         ),
-        const SizedBox(height: 20),
+        SizedBox(height: 20),
       ],
     );
   }
 }
 
-class _DialogAction {
+// ── 액션 파라미터 데이터 클래스 ───────────────────────────────
+class _ActionParams {
   final String label;
-  final bool primary;
-  final bool destructive;
-  final VoidCallback onTap;
+  final IconData icon;
+  final List<Color> colors;
+  final bool enabled;
+  final VoidCallback? onTap;
 
-  const _DialogAction({
+  const _ActionParams({
     required this.label,
+    required this.icon,
+    required this.colors,
+    required this.enabled,
     required this.onTap,
-    this.primary = false,
-    this.destructive = false,
   });
-}
-
-class _SimpleDialog extends StatelessWidget {
-  final String title;
-  final String? content;
-  final List<_DialogAction> actions;
-
-  const _SimpleDialog({
-    required this.title,
-    required this.content,
-    required this.actions,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textDark,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (content != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                content!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textMuted,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const SizedBox(height: 24),
-            Row(
-              children: actions.map((a) {
-                return Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(left: a == actions.first ? 0 : 6),
-                    child: a.primary
-                        ? ElevatedButton(
-                            onPressed: a.onTap,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: a.destructive
-                                  ? AppTheme.error
-                                  : AppTheme.primary,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 13),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              a.label,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          )
-                        : OutlinedButton(
-                            onPressed: a.onTap,
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: AppTheme.border),
-                              padding: const EdgeInsets.symmetric(vertical: 13),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              a.label,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppTheme.textMuted,
-                              ),
-                            ),
-                          ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

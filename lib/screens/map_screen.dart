@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants.dart';
 import '../widgets/kakao_map_webview.dart';
+import '../widgets/glassmorphic_container.dart';
+import '../widgets/gradient_button.dart';
 import '../services/circle_service.dart';
 import '../services/room_service.dart';
 import 'place_screen.dart';
@@ -33,7 +35,6 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final _circleService = CircleService();
   final _roomService   = RoomService();
-  final _db            = FirebaseFirestore.instance;
   final _mapKey        = GlobalKey<KakaoMapWebViewState>();
 
   final List<StreamSubscription> _subs = [];
@@ -60,7 +61,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _hasIntersection = false;
 
   // 파트너 색상 (최대 3명 추가 지원)
-  static const List<String> _partnerColors = ['#FF6584', '#FFB347', '#4ECDC4'];
+  static const List<String> _partnerColors = ['#FF9BDE', '#34D399', '#FBBF24', '#60A5FA'];
 
   @override
   void initState() {
@@ -335,26 +336,29 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    // 3명 이상: 공통 교집합 존재 여부 추가 검증
+    // 3명 이상: 공통 교집합 후보점 검증
+    // 각 원 쌍의 교선 위의 점들을 후보로 사용해 하나라도 전체 원 안에 있으면 교집합 존재
     if (circles.length >= 3) {
-      double cLat = 0, cLng = 0, totalW = 0;
+      // 후보1: 모든 원 중심의 단순 평균
+      final avgLat = circles.map((c) => c['lat']!).reduce((a, b) => a + b) / circles.length;
+      final avgLng = circles.map((c) => c['lng']!).reduce((a, b) => a + b) / circles.length;
+      final candidates = <Map<String, double>>[{'lat': avgLat, 'lng': avgLng}];
+
+      // 후보2: 각 쌍의 중심 간 내분점(반지름 비율)
       for (int i = 0; i < circles.length; i++) {
         for (int j = i + 1; j < circles.length; j++) {
           final ri = circles[i]['radius']!, rj = circles[j]['radius']!;
-          final w  = 1.0 / (ri + rj);
-          cLat += (circles[i]['lat']! * rj + circles[j]['lat']! * ri) / (ri + rj) * w;
-          cLng += (circles[i]['lng']! * rj + circles[j]['lng']! * ri) / (ri + rj) * w;
-          totalW += w;
+          candidates.add({
+            'lat': (circles[i]['lat']! * rj + circles[j]['lat']! * ri) / (ri + rj),
+            'lng': (circles[i]['lng']! * rj + circles[j]['lng']! * ri) / (ri + rj),
+          });
         }
       }
-      cLat /= totalW;
-      cLng /= totalW;
 
-      for (final c in circles) {
-        if (_haversine(cLat, cLng, c['lat']!, c['lng']!) >= c['radius']!) {
-          return false;
-        }
-      }
+      // 후보 중 하나라도 모든 원 안에 있으면 공통 교집합 존재
+      final hasCommon = candidates.any((pt) => circles.every((c) =>
+          _haversine(pt['lat']!, pt['lng']!, c['lat']!, c['lng']!) < c['radius']!));
+      if (!hasCommon) return false;
     }
 
     return true;
@@ -377,15 +381,19 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _isRequesting = true);
 
     try {
-      final roomSnap  = await _db.collection('rooms').doc(widget.roomId).get();
-      final roomData  = roomSnap.data() ?? {};
+      final roomData       = await _roomService.getRoom(widget.roomId) ?? {};
       final searchQuery    = roomData['searchQuery'] ?? '맛집';
       final mood           = List<String>.from(roomData['mood'] ?? []);
       final intimacyScore  = (roomData['intimacyScore'] ?? 50).toDouble();
 
-      // user1 = 나, user2 = 첫 번째 파트너 (현재 백엔드는 2인 지원)
-      final partnerId  = widget.members.firstWhere((id) => id != widget.myUserId);
-      final partnerData = _partnerCircles[partnerId]!;
+      // 모든 파트너 원을 partners 배열로 전달 (백엔드가 지원하는 경우)
+      // 백엔드가 2인만 지원하면 user2에 첫 번째 파트너를 사용
+      final partnerIds = widget.members.where((id) => id != widget.myUserId).toList();
+      final firstPartnerId = partnerIds.first;
+      final firstPartnerData = _partnerCircles[firstPartnerId];
+      if (firstPartnerData == null) {
+        throw Exception('파트너 원 데이터를 찾을 수 없습니다');
+      }
 
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/recommend'),
@@ -393,10 +401,18 @@ class _MapScreenState extends State<MapScreen> {
         body: jsonEncode({
           'user1': {'lat': _myLat, 'lng': _myLng, 'radius': _myRadius},
           'user2': {
-            'lat':    partnerData['lat'],
-            'lng':    partnerData['lng'],
-            'radius': partnerData['radius'],
+            'lat':    firstPartnerData['lat'],
+            'lng':    firstPartnerData['lng'],
+            'radius': firstPartnerData['radius'],
           },
+          // 3인 이상 원 데이터 추가 전달 (백엔드 확장 시 활용)
+          'users': [
+            {'lat': _myLat, 'lng': _myLng, 'radius': _myRadius},
+            ...partnerIds.map((id) {
+              final d = _partnerCircles[id]!;
+              return {'lat': d['lat'], 'lng': d['lng'], 'radius': d['radius']};
+            }),
+          ],
           'search_query':   searchQuery,
           'mood':           mood,
           'intimacy_score': intimacyScore,
@@ -474,192 +490,257 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final topPad    = MediaQuery.of(context).padding.top;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('구역 설정',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          KakaoMapWebView(
-            key: _mapKey,
-            kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
-            onCenterChanged: (lat, lng) {},
-            onCircleDrawn: _onCircleDrawn,
-            onMapReady: _onMapReady,
+          // 전체 화면 지도
+          Positioned.fill(
+            child: KakaoMapWebView(
+              key: _mapKey,
+              kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
+              onCenterChanged: (lat, lng) {},
+              onCircleDrawn: _onCircleDrawn,
+              onMapReady: _onMapReady,
+            ),
           ),
 
-          // ── 상단 안내 텍스트 ──
+          // ── 상단 오버레이 ──────────────────────────────────
           Positioned(
-            top: 16, left: 16, right: 16,
+            top: topPad + 8, left: 16, right: 16,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 날짜/날씨 배너
-                if (_appointmentDate != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 6),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.event, size: 14, color: Colors.white),
-                        const SizedBox(width: 6),
-                        Text(
-                          _formatAppointmentDate(_appointmentDate!),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                        if (_weatherIconData() != null) ...[
-                          const SizedBox(width: 8),
-                          Icon(_weatherIconData()!, size: 15, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${_weatherInfo!['temp']}°',
-                            style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-
-                // 드로우 모드 안내
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.95),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 8),
-                    ],
-                  ),
+                // 헤더 행: 뒤로가기 + 타이틀 + 날짜/날씨
+                GlassmorphicContainer(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _isDrawMode ? Icons.gesture : Icons.open_with,
-                        size: 16,
-                        color: _isDrawMode
-                            ? AppTheme.accent
-                            : AppTheme.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _isDrawMode
-                            ? '손가락으로 원을 그려보세요!'
-                            : '이동 모드  ·  반경 ${(_myRadius / 1000).toStringAsFixed(1)}km',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                        children: [
+                          // 뒤로가기
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: Container(
+                              width: 36, height: 36,
+                              decoration: BoxDecoration(
+                                color: AppTheme.bg,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.chevron_left_rounded,
+                                size: 22,
+                                color: AppTheme.textDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              '구역 설정',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.textDark,
+                              ),
+                            ),
+                          ),
+                          // 날짜 + 날씨
+                          if (_appointmentDate != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.event_rounded,
+                                      size: 13, color: AppTheme.primary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatAppointmentDate(_appointmentDate!),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.primary,
+                                    ),
+                                  ),
+                                  if (_weatherIconData() != null) ...[
+                                    const SizedBox(width: 6),
+                                    Icon(_weatherIconData()!,
+                                        size: 13, color: AppTheme.primary),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${_weatherInfo!['temp']}°',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.primary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                        ],
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // 모드 인디케이터 pill
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
                           color: _isDrawMode
-                              ? AppTheme.accent
-                              : AppTheme.primary,
+                              ? AppTheme.accent.withValues(alpha: 0.88)
+                              : Colors.white.withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _isDrawMode
+                                ? AppTheme.accent.withValues(alpha: 0.4)
+                                : Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _isDrawMode ? Icons.gesture : Icons.open_with,
+                              size: 14,
+                              color: _isDrawMode
+                                  ? Colors.white
+                                  : AppTheme.textMuted,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _isDrawMode
+                                  ? '손가락으로 원을 그려보세요'
+                                  : '이동 모드  ·  반경 ${(_myRadius / 1000).toStringAsFixed(1)}km',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _isDrawMode
+                                    ? Colors.white
+                                    : AppTheme.textMuted,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
 
-          // ── 하단 버튼 ──
-          Positioned(
-            bottom: bottomPadding + 16,
-            left: 16,
-            right: 16,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 교집합 미충족 안내
-                if (!_hasIntersection && _myCircleDrawn)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.accentBg,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.accent.withValues(alpha: 0.4)),
-                    ),
-                    child: Text(
-                      _partnerCircles.length <
-                              widget.members.length - 1
-                          ? '모든 멤버가 원을 그려야 장소 추천이 가능해요'
-                          : '원이 겹치지 않아요. 원을 더 넓게 그려주세요',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.accent),
-                    ),
-                  ),
-
-                Row(
+          // ── 교집합 없음 경고 ───────────────────────────────
+          if (!_hasIntersection && _myCircleDrawn)
+            Positioned(
+              left: 16, right: 16,
+              bottom: bottomPad + 100,
+              child: GlassmorphicContainer(
+                borderRadius: BorderRadius.circular(14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                backgroundAlpha: 0.12,
+                baseColor: AppTheme.accent,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    FloatingActionButton(
-                      heroTag: 'drawToggle',
-                      onPressed: _toggleDrawMode,
-                      backgroundColor:
-                          _isDrawMode ? AppTheme.accent : AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 2,
-                      child: Icon(
-                          _isDrawMode ? Icons.open_with : Icons.gesture),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: (_isRequesting || !_hasIntersection)
-                            ? null
-                            : _requestPlaces,
-                        icon: _isRequesting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
-                            : const Icon(Icons.search_rounded),
-                        label: Text(
-                            _isRequesting ? '검색 중...' : '장소 추천 받기'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _hasIntersection
-                              ? AppTheme.primary
-                              : AppTheme.disabled,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppTheme.disabled,
-                          disabledForegroundColor: Colors.white70,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                          elevation: 2,
-                          textStyle: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.bold),
-                        ),
-                      ),
+                    const Icon(Icons.info_outline_rounded,
+                        size: 14, color: AppTheme.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      _partnerCircles.length < widget.members.length - 1
+                          ? '모든 멤버가 원을 그려야 장소 추천이 가능해요'
+                          : '원이 겹치지 않아요. 더 넓게 그려주세요',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
+              ),
+            ),
+
+          // ── 하단 플로팅 툴바 ────────────────────────────────
+          Positioned(
+            left: 16, right: 16,
+            bottom: bottomPad + 16,
+            child: GlassmorphicContainer(
+              borderRadius: BorderRadius.circular(24),
+              sigmaX: 16, sigmaY: 16,
+              padding: const EdgeInsets.all(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
               ],
+              child: Row(
+                    children: [
+                      // 그리기 모드 토글
+                      GestureDetector(
+                        onTap: _toggleDrawMode,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 52, height: 52,
+                          decoration: BoxDecoration(
+                            color: _isDrawMode
+                                ? AppTheme.accent
+                                : AppTheme.bg,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(
+                            _isDrawMode ? Icons.open_with : Icons.gesture,
+                            color: _isDrawMode
+                                ? Colors.white
+                                : AppTheme.textMuted,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // 장소 추천 버튼
+                      Expanded(
+                        child: GradientButton(
+                          onTap: _requestPlaces,
+                          enabled: _hasIntersection,
+                          loading: _isRequesting,
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search_rounded,
+                                  size: 18, color: Colors.white),
+                              SizedBox(width: 6),
+                              Text(
+                                '장소 추천 받기',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
             ),
           ),
         ],

@@ -27,7 +27,17 @@ class AppTheme {
 
   // ── 에러·친밀도 하단 ─────────────────────────────────────────
   static const error = Color(0xFFFF4D67);
-  static const intimacyLow = Color(0xFFFF8FA3);
+
+  // ── 친밀도 단계별 색상 ────────────────────────────────────────
+  static const intimacyTop = Color(0xFFFF9BDE); // 핑크    — 매우 친밀 (80+)
+  static const intimacyHigh = Color.fromARGB(
+    255,
+    102,
+    222,
+    194,
+  ); // 민트    — 꽤 가까운 사이 (60~79)
+  static const intimacyMid = Color(0xFF9D8EFF); // 페리윙클 — 친해지는 중 (40~59)
+  static const intimacyLow = Color(0xFFFFCC55); // 노랑    — 아직 서먹서먹 (~39)
 
   // ── ThemeData ────────────────────────────────────────────────
   static ThemeData get theme => ThemeData(

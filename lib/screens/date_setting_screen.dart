@@ -1,7 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chemeet/app_theme.dart';
-import '../services/circle_service.dart';
+import '../services/room_service.dart';
+import '../widgets/gradient_button.dart';
 import 'map_screen.dart';
 
 class DateSettingScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class DateSettingScreen extends StatefulWidget {
 }
 
 class _DateSettingScreenState extends State<DateSettingScreen> {
+  final _roomService = RoomService();
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _loading = false;
@@ -36,18 +38,16 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
       initialDate: now.add(const Duration(days: 1)),
       firstDate: now,
       lastDate: now.add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: AppTheme.primary,
-              onPrimary: Colors.white,
-              onSurface: AppTheme.textDark,
-            ),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppTheme.primary,
+            onPrimary: Colors.white,
+            onSurface: AppTheme.textDark,
           ),
-          child: child!,
-        );
-      },
+        ),
+        child: child!,
+      ),
     );
     if (picked != null) setState(() => _selectedDate = picked);
   }
@@ -56,17 +56,15 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
     final picked = await showTimePicker(
       context: context,
       initialTime: const TimeOfDay(hour: 14, minute: 0),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: AppTheme.primary,
-              onPrimary: Colors.white,
-            ),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppTheme.primary,
+            onPrimary: Colors.white,
           ),
-          child: child!,
-        );
-      },
+        ),
+        child: child!,
+      ),
     );
     if (picked != null) setState(() => _selectedTime = picked);
   }
@@ -78,10 +76,9 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
       );
       return;
     }
-
     setState(() => _loading = true);
 
-    final appointmentDateTime = DateTime(
+    final dt = DateTime(
       _selectedDate!.year,
       _selectedDate!.month,
       _selectedDate!.day,
@@ -89,14 +86,7 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
       _selectedTime!.minute,
     );
 
-    await FirebaseFirestore.instance
-        .collection('rooms')
-        .doc(widget.roomId)
-        .update({
-      'appointmentDate': Timestamp.fromDate(appointmentDateTime),
-      'status': 'drawing',
-    });
-
+    await _roomService.setDrawingStatus(widget.roomId, dt);
     if (!mounted) return;
     setState(() => _loading = false);
 
@@ -104,10 +94,10 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => MapScreen(
-          roomId: widget.roomId,
-          myUserId: widget.myUserId,
+          roomId:     widget.roomId,
+          myUserId:   widget.myUserId,
           myUserName: widget.myUserName,
-          members: widget.members,
+          members:    widget.members,
         ),
       ),
     );
@@ -119,11 +109,10 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
   }
 
   String _formatTime(TimeOfDay t) {
-    final hour = t.hour;
+    final period = t.hour < 12 ? '오전' : '오후';
+    final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
     final minute = t.minute.toString().padLeft(2, '0');
-    final period = hour < 12 ? '오전' : '오후';
-    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
-    return '$period $displayHour:$minute';
+    return '$period $hour:$minute';
   }
 
   @override
@@ -132,164 +121,204 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(
-        title: const Text('약속 날짜 설정'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 안내 배너
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryBg,
-                borderRadius: BorderRadius.circular(12),
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            backgroundColor: AppTheme.bg,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            automaticallyImplyLeading: false,
+            centerTitle: false,
+            titleSpacing: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.chevron_left_rounded, size: 28, color: AppTheme.textDark),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: const Text(
+              '약속 날짜 설정',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppTheme.textDark, letterSpacing: -0.3),
+            ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 20),
+                child: CircleForwardButton(
+                  enabled: canConfirm,
+                  loading: _loading,
+                  onTap: _confirm,
+                ),
               ),
-              child: Row(
+            ],
+          ),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, color: AppTheme.primary, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '날짜를 설정하면 지도가 열리고\n${widget.maxMembers}명 모두 원을 그릴 수 있어요',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.primary,
-                        height: 1.5,
+                      // 안내 배너
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: AppTheme.primary.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.info_outline_rounded, color: Colors.white, size: 16),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    '날짜를 설정하면 지도가 열리고\n${widget.maxMembers}명 모두 원을 그릴 수 있어요',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppTheme.primary,
+                                      height: 1.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+
+                      const SizedBox(height: 28),
+
+                      // 날짜 선택
+                      const Text(
+                        '날짜 선택',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _PickerTile(
+                        icon: Icons.calendar_month_rounded,
+                        label: _selectedDate != null
+                            ? _formatDate(_selectedDate!)
+                            : '날짜를 선택하세요',
+                        isSelected: _selectedDate != null,
+                        onTap: _pickDate,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // 시간 선택
+                      const Text(
+                        '시간 선택',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _PickerTile(
+                        icon: Icons.access_time_rounded,
+                        label: _selectedTime != null
+                            ? _formatTime(_selectedTime!)
+                            : '시간을 선택하세요',
+                        isSelected: _selectedTime != null,
+                        onTap: _pickTime,
+                      ),
+
+                      const Spacer(),
+
+                      // 약속 요약 카드
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: canConfirm
+                            ? Container(
+                                key: const ValueKey('summary'),
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFFFF0FA),
+                                      Color(0xFFF0EEFF),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: AppTheme.primary.withValues(alpha: 0.25),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppTheme.primary.withValues(alpha: 0.08),
+                                      blurRadius: 14,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '약속 요약',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.primary,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _formatDate(_selectedDate!),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _formatTime(_selectedTime!),
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.textDark,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const SizedBox.shrink(key: ValueKey('empty')),
+                      ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 32),
-
-            Text(
-              '날짜 선택',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppTheme.textDark,
-              ),
-            ),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: _pickDate,
-              child: _PickerTile(
-                icon: Icons.calendar_month,
-                label: _selectedDate != null
-                    ? _formatDate(_selectedDate!)
-                    : '날짜를 선택하세요',
-                isSelected: _selectedDate != null,
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            Text(
-              '시간 선택',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppTheme.textDark,
-              ),
-            ),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: _pickTime,
-              child: _PickerTile(
-                icon: Icons.access_time,
-                label: _selectedTime != null
-                    ? _formatTime(_selectedTime!)
-                    : '시간을 선택하세요',
-                isSelected: _selectedTime != null,
-              ),
-            ),
-
-            const Spacer(),
-
-            // 약속 요약 카드
-            if (canConfirm) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppTheme.primary.withValues(alpha: 0.3),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primary.withValues(alpha: 0.08),
-                      blurRadius: 12,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '약속 요약',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _formatDate(_selectedDate!),
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatTime(_selectedTime!),
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: (canConfirm && !_loading) ? _confirm : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: AppTheme.disabledBg,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 0,
-                ),
-                child: _loading
-                    ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
-                )
-                    : const Text(
-                  '지도 열기',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -299,45 +328,84 @@ class _PickerTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool isSelected;
+  final VoidCallback onTap;
 
   const _PickerTile({
     required this.icon,
     required this.label,
     required this.isSelected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: isSelected ? AppTheme.primaryBg : AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected ? AppTheme.primary : AppTheme.border,
-          width: isSelected ? 1.5 : 1,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [Color(0xFFFFF0FA), Color(0xFFF0EEFF)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isSelected ? null : AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? AppTheme.primary.withValues(alpha: 0.4) : AppTheme.border,
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? [BoxShadow(
+                  color: AppTheme.primary.withValues(alpha: 0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                )]
+              : [],
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            color: isSelected ? AppTheme.primary : AppTheme.disabled,
-            size: 22,
-          ),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              color: isSelected ? AppTheme.primary : AppTheme.textMuted,
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? const LinearGradient(
+                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: isSelected ? null : AppTheme.bg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? Colors.white : AppTheme.disabled,
+                size: 18,
+              ),
             ),
-          ),
-          const Spacer(),
-          Icon(Icons.chevron_right, color: AppTheme.disabled, size: 20),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? AppTheme.textDark : AppTheme.textMuted,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: isSelected ? AppTheme.primary : AppTheme.disabled,
+              size: 20,
+            ),
+          ],
+        ),
       ),
     );
   }

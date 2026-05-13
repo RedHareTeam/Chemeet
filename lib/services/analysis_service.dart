@@ -43,7 +43,6 @@ class AnalysisService {
       // [버그 수정] 기존엔 rethrow로 앱이 에러 다이얼로그를 띄웠음.
       // 백엔드 미연결 환경에서도 앱이 정상 동작하도록 더미 데이터 폴백 처리.
       debugPrint('분석 API 오류 → 더미 데이터 사용: $e');
-      await Future.delayed(const Duration(seconds: 2)); // 로딩 시뮬레이션
       result = {
         'intimacyScore': 74,
         'keywords':      ['카페', '조용한 곳', '낮 시간대', '실내', '브런치'],

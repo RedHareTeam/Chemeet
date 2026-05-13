@@ -4,10 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:chemeet/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/room_service.dart';
+import '../widgets/gradient_button.dart';
 import 'analyzing_screen.dart';
 
 class UploadScreen extends StatefulWidget {
-  /// 재분석 모드: 기존 방 ID로 분석만 업데이트 (방제목/인원 설정 숨김)
   final bool isReAnalyze;
   final String? roomId;
 
@@ -22,26 +22,33 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  final _authService      = AuthService();
-  final _roomService      = RoomService();
-  final _titleController  = TextEditingController();
-  int   _memberCount      = 2;
+  final _authService     = AuthService();
+  final _roomService     = RoomService();
+  final _titleController = TextEditingController();
+  int   _memberCount     = 2;
   File? _pickedFile;
   String? _fileName;
-  bool  _loading          = false;
+  bool  _loading         = false;
 
-  String get _myUserId => _authService.currentUser!.uid;
+  String get _myUserId => _authService.currentUser?.uid ?? '';
   String _myUserName = '';
+
+  bool get _canSubmit {
+    if (_pickedFile == null) return false;
+    if (!widget.isReAnalyze && _titleController.text.trim().isEmpty) return false;
+    return true;
+  }
 
   @override
   void initState() {
     super.initState();
     _loadUserName();
+    _titleController.addListener(() => setState(() {}));
   }
 
   Future<void> _loadUserName() async {
     final info = await _authService.getUserInfo(_myUserId);
-    setState(() => _myUserName = info?['userName'] ?? '');
+    if (mounted) setState(() => _myUserName = info?['userName'] ?? '');
   }
 
   Future<void> _pickFile() async {
@@ -86,7 +93,6 @@ class _UploadScreenState extends State<UploadScreen> {
     }
 
     final txtContent = await _pickedFile!.readAsString();
-
     if (!mounted) return;
     setState(() => _loading = false);
 
@@ -94,12 +100,12 @@ class _UploadScreenState extends State<UploadScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => AnalyzingScreen(
-          roomId:       roomId,
-          myUserId:     _myUserId,
-          myUserName:   _myUserName,
-          maxMembers:   _memberCount,
-          txtContent:   txtContent,
-          isReAnalyze:  widget.isReAnalyze,
+          roomId:      roomId,
+          myUserId:    _myUserId,
+          myUserName:  _myUserName,
+          maxMembers:  _memberCount,
+          txtContent:  txtContent,
+          isReAnalyze: widget.isReAnalyze,
         ),
       ),
     );
@@ -115,223 +121,237 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(
-        title: Text(widget.isReAnalyze ? '리포트 업데이트' : '새 방 만들기'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── 방 제목 + 인원 설정 (재분석 모드에서 숨김) ──
-            if (!widget.isReAnalyze) ...[
-              Text(
-                '방 제목',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: AppTheme.textDark,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            backgroundColor: AppTheme.bg,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            automaticallyImplyLeading: false,
+            centerTitle: false,
+            titleSpacing: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.chevron_left_rounded, size: 28, color: AppTheme.textDark),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Text(
+              widget.isReAnalyze ? '리포트 업데이트' : '새 방 만들기',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppTheme.textDark, letterSpacing: -0.3),
+            ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 20),
+                child: CircleForwardButton(
+                  enabled: _canSubmit,
+                  loading: _loading,
+                  onTap: _submit,
                 ),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _titleController,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: AppTheme.surface,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.primary, width: 1.5),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 28),
-              Text(
-                '인원 설정',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: AppTheme.textDark,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '본인 포함 총 인원 수를 선택하세요',
-                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: List.generate(4, (i) {
-                  final count    = i + 2;
-                  final selected = _memberCount == count;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _memberCount = count),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: selected ? AppTheme.primary : AppTheme.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: selected ? AppTheme.primary : AppTheme.border,
-                            width: selected ? 2 : 1,
-                          ),
-                          boxShadow: selected
-                              ? [
-                            BoxShadow(
-                              color: AppTheme.primary.withValues(alpha: 0.25),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ]
-                              : [],
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              '$count',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: selected ? Colors.white : AppTheme.primary,
-                              ),
-                            ),
-                            Text(
-                              '명',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: selected
-                                    ? Colors.white70
-                                    : AppTheme.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 28),
             ],
-
-            // ── 파일 업로드 ───────────────────────────
-            Text(
-              '카카오톡 대화 파일',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppTheme.textDark,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '카카오톡 대화방 → 더보기 → 대화 내용 내보내기 → txt 파일',
-              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: _pickFile,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                decoration: BoxDecoration(
-                  color: _pickedFile != null
-                      ? AppTheme.primaryBg
-                      : AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: _pickedFile != null
-                        ? AppTheme.primary
-                        : AppTheme.border,
-                    width: _pickedFile != null ? 1.5 : 1,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      _pickedFile != null
-                          ? Icons.check_circle
-                          : Icons.upload_file,
-                      size: 36,
-                      color: _pickedFile != null
-                          ? AppTheme.primary
-                          : AppTheme.disabled,
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 방 제목 + 인원 (재분석 모드 숨김)
+                  if (!widget.isReAnalyze) ...[
+                    const Text(
+                      '방 제목',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      _pickedFile != null ? _fileName! : '탭하여 .txt 파일 선택',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: _pickedFile != null
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                        color: _pickedFile != null
-                            ? AppTheme.primary
-                            : AppTheme.textMuted,
+                    TextField(
+                      controller: _titleController,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppTheme.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                        ),
                       ),
                     ),
-                    if (_pickedFile != null) ...[
-                      const SizedBox(height: 4),
-                      const Text(
-                        '파일을 다시 선택하려면 탭하세요',
-                        style: TextStyle(
-                            fontSize: 11, color: AppTheme.disabled),
+                    const SizedBox(height: 28),
+                    const Text(
+                      '인원 설정',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
                       ),
-                    ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '본인 포함 총 인원 수를 선택하세요',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: List.generate(4, (i) {
+                        final count    = i + 2;
+                        final selected = _memberCount == count;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: GestureDetector(
+                            onTap: () => setState(() => _memberCount = count),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 68,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                gradient: selected
+                                    ? const LinearGradient(
+                                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      )
+                                    : null,
+                                color: selected ? null : AppTheme.surface,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: selected ? Colors.transparent : AppTheme.border,
+                                ),
+                                boxShadow: selected
+                                    ? [BoxShadow(
+                                        color: AppTheme.primary.withValues(alpha: 0.3),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      )]
+                                    : [],
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    '$count',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: selected ? Colors.white : AppTheme.primary,
+                                    ),
+                                  ),
+                                  Text(
+                                    '명',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: selected ? Colors.white70 : AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 32),
                   ],
-                ),
-              ),
-            ),
 
-            const SizedBox(height: 36),
-
-            // ── 제출 버튼 ─────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                  // 파일 업로드
+                  const Text(
+                    '카카오톡 대화 파일',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textDark,
+                    ),
                   ),
-                  elevation: 0,
-                ),
-                child: _loading
-                    ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
-                )
-                    : const Text(
-                  '분석 시작',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    '카카오톡 → 대화방 → 더보기 → 대화 내용 내보내기 → .txt',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: _pickFile,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 36),
+                      decoration: BoxDecoration(
+                        gradient: _pickedFile != null
+                            ? LinearGradient(
+                                colors: [
+                                  AppTheme.primary.withValues(alpha: 0.08),
+                                  const Color(0xFFFF7BAC).withValues(alpha: 0.06),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : null,
+                        color: _pickedFile != null ? null : AppTheme.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _pickedFile != null
+                              ? AppTheme.primary.withValues(alpha: 0.4)
+                              : AppTheme.border,
+                          width: _pickedFile != null ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              gradient: _pickedFile != null
+                                  ? const LinearGradient(
+                                      colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    )
+                                  : null,
+                              color: _pickedFile != null ? null : AppTheme.bg,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _pickedFile != null
+                                  ? Icons.check_rounded
+                                  : Icons.upload_file_rounded,
+                              size: 26,
+                              color: _pickedFile != null ? Colors.white : AppTheme.disabled,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _pickedFile != null ? _fileName! : '탭하여 .txt 파일 선택',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: _pickedFile != null ? FontWeight.w600 : FontWeight.w400,
+                              color: _pickedFile != null ? AppTheme.primary : AppTheme.textMuted,
+                            ),
+                          ),
+                          if (_pickedFile != null) ...[
+                            const SizedBox(height: 4),
+                            const Text(
+                              '다시 선택하려면 탭하세요',
+                              style: TextStyle(fontSize: 11, color: AppTheme.disabled),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

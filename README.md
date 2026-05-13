@@ -17,9 +17,7 @@
 
 ## 남은 작업
 
-- 3~4명 확장
-- UI/UX 개선
-- 카카오맵 장소 정보창 글씨 깨짐 해결
+- 팝업창/메뉴 UI/UX 개선
 
 ---
 
@@ -55,6 +53,7 @@ Chemeet/
     ├── app_theme.dart              # 공통 색상/텍스트/컴포넌트 테마 정의
     ├── constants.dart              # 백엔드 baseUrl (iOS/Android 분기)
     ├── screens/
+    │   ├── splash_screen.dart      # 스플래시 (Chemeet 로고 애니메이션, 로그인 분기)
     │   ├── auth_screen.dart        # 로그인/회원가입
     │   ├── room_list_screen.dart   # 내 방 목록 조회, 방 생성/입장
     │   ├── room_home_screen.dart   # 방 홈 — 친밀도 리포트, 약속 현황, 메뉴
@@ -73,7 +72,12 @@ Chemeet/
     │   ├── history_service.dart    # 방문 히스토리 조회 및 실시간 구독
     │   └── place_service.dart      # 지도 기반 주변 장소 검색
     └── widgets/
-        └── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시
+        ├── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시
+        ├── app_dialog.dart         # 공통 다이얼로그
+        ├── glassmorphic_container.dart # 반투명 블러 컨테이너
+        ├── gradient_button.dart    # 그라데이션 버튼 (CircleForwardButton 포함)
+        ├── platform_html_view.dart # iOS/Android/Web 분기 WebView
+        └── screen_header.dart      # (레거시) 구 화면 헤더
 ```
 
 ---
