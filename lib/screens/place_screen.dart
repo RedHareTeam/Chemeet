@@ -8,6 +8,7 @@ import '../services/vote_service.dart';
 import '../services/circle_service.dart';
 import '../services/room_service.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/glass_popup_menu.dart';
 import '../widgets/glassmorphic_container.dart';
 import '../widgets/platform_html_view.dart';
 import 'package:chemeet/app_theme.dart';
@@ -24,6 +25,7 @@ class PlaceScreen extends StatefulWidget {
   final String userName;
   final List<String> members;
   final List<Map<String, dynamic>> places;
+  final DateTime? appointmentDate;
 
   const PlaceScreen({
     super.key,
@@ -32,6 +34,7 @@ class PlaceScreen extends StatefulWidget {
     required this.userName,
     required this.members,
     required this.places,
+    this.appointmentDate,
   });
 
   @override
@@ -240,6 +243,7 @@ class _PlaceScreenState extends State<PlaceScreen>
         roomId: widget.roomId,
         confirmedPlace: confirmed,
         members: widget.members,
+        appointmentDate: widget.appointmentDate,
       ),
       _circleService.confirmPlace(widget.roomId, confirmed),
     ]);
@@ -287,6 +291,7 @@ class _PlaceScreenState extends State<PlaceScreen>
       builder: (_) => AppDialog(
         title: '다시 만들기',
         content: '날짜, 원, 장소를 모두 초기화하고\n처음부터 다시 시작할까요?',
+        icon: Icons.refresh_rounded,
         actions: [
           DialogAction(label: '취소', onTap: () => Navigator.pop(context, false)),
           DialogAction(
@@ -324,6 +329,7 @@ class _PlaceScreenState extends State<PlaceScreen>
       builder: (_) => AppDialog(
         title: '동점이에요',
         content: '득표수가 같아 장소를 확정할 수 없어요.\n다시 그리기를 하거나\n투표를 다시 진행해주세요.',
+        icon: Icons.balance_outlined,
         actions: [
           DialogAction(
             label: '다시 투표',
@@ -446,31 +452,26 @@ class _PlaceScreenState extends State<PlaceScreen>
             ),
           ),
           const SizedBox(width: 4),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: AppTheme.textMuted, size: 22),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          GlassPopupMenu(
+            openUpward: false,
+            alignRight: true,
             onSelected: (v) {
               if (v == 'redraw') _resetAndRedraw();
               if (v == 'restart') _resetAll();
             },
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'redraw',
-                child: Row(children: [
-                  Icon(Icons.refresh_rounded, size: 18, color: AppTheme.primary),
-                  SizedBox(width: 10),
-                  Text('다시 그리기'),
-                ]),
-              ),
-              const PopupMenuItem(
-                value: 'restart',
-                child: Row(children: [
-                  Icon(Icons.replay_rounded, size: 18, color: AppTheme.error),
-                  SizedBox(width: 10),
-                  Text('다시 만들기', style: TextStyle(color: AppTheme.error)),
-                ]),
-              ),
+            items: const [
+              GlassMenuItem(value: 'redraw', icon: Icons.refresh_rounded, label: '다시 그리기'),
+              GlassMenuItem(value: 'restart', icon: Icons.replay_rounded, label: '다시 만들기', destructive: true),
             ],
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppTheme.bg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.more_vert_rounded, color: AppTheme.textMuted, size: 20),
+            ),
           ),
           const SizedBox(width: 8),
         ],
@@ -823,6 +824,7 @@ class _ConfirmedDialog extends StatelessWidget {
 
     return AppDialog(
       title: '약속 장소가 확정됐어요!',
+      icon: Icons.celebration_outlined,
       extra: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -954,7 +956,7 @@ class _PlaceMapViewState extends State<_PlaceMapView> {
   <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=yes">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family:"Noto Sans KR",-apple-system,"Apple SD Gothic Neo",system-ui,sans-serif; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; font-family:"Noto Sans KR",-apple-system,"Apple SD Gothic Neo",system-ui,sans-serif; }
     body { width:100vw; height:100vh; overflow:hidden; }
     #map { width:100%; height:100%; }
     /* 핀 래퍼: 원(30×30)만 flow에 포함, 레이블은 absolute로 위에 띄움 */
@@ -965,6 +967,13 @@ class _PlaceMapViewState extends State<_PlaceMapView> {
       display:flex; align-items:center; justify-content:center;
       font-weight:700; font-size:13px;
       box-shadow:0 2px 6px rgba(0,0,0,0.28);
+      transition: transform 0.32s cubic-bezier(0.34,1.56,0.64,1);
+      transform-origin: center;
+    }
+    .pm:active .pm-num {
+      transform: scale(0.78);
+      transition-duration: 0.06s;
+      transition-timing-function: ease-in;
     }
     .pm-name {
       position:absolute; bottom:calc(100% + 4px); left:50%;
@@ -989,6 +998,7 @@ class _PlaceMapViewState extends State<_PlaceMapView> {
   <div id="map"></div>
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${widget.kakaoApiKey}"></script>
   <script>
+    document.addEventListener('touchstart', function(){}, {passive:true});
     var map;
     kakao.maps.load(function() {
       map = new kakao.maps.Map(document.getElementById('map'), {

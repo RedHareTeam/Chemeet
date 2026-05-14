@@ -207,52 +207,57 @@ class _UploadScreenState extends State<UploadScreen> {
                         final selected = _memberCount == count;
                         return Padding(
                           padding: const EdgeInsets.only(right: 10),
-                          child: GestureDetector(
-                            onTap: () => setState(() => _memberCount = count),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: 68,
-                              height: 68,
-                              decoration: BoxDecoration(
-                                gradient: selected
-                                    ? const LinearGradient(
-                                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      )
-                                    : null,
-                                color: selected ? null : AppTheme.surface,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: selected ? Colors.transparent : AppTheme.border,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => setState(() => _memberCount = count),
+                              borderRadius: BorderRadius.circular(18),
+                              splashFactory: NoSplash.splashFactory,
+                              highlightColor: Colors.black.withValues(alpha: 0.06),
+                              child: Container(
+                                width: 68,
+                                height: 68,
+                                decoration: BoxDecoration(
+                                  gradient: selected
+                                      ? const LinearGradient(
+                                          colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        )
+                                      : null,
+                                  color: selected ? null : AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: selected ? Colors.transparent : AppTheme.border,
+                                  ),
+                                  boxShadow: selected
+                                      ? [BoxShadow(
+                                          color: AppTheme.primary.withValues(alpha: 0.3),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        )]
+                                      : [],
                                 ),
-                                boxShadow: selected
-                                    ? [BoxShadow(
-                                        color: AppTheme.primary.withValues(alpha: 0.3),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
-                                      )]
-                                    : [],
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '$count',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: selected ? Colors.white : AppTheme.primary,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '$count',
+                                      style: TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: selected ? Colors.white : AppTheme.primary,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    '명',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: selected ? Colors.white70 : AppTheme.textMuted,
+                                    Text(
+                                      '명',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: selected ? Colors.white70 : AppTheme.textMuted,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),

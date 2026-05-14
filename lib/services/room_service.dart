@@ -114,6 +114,7 @@ class RoomService {
     required String roomId,
     required Map<String, dynamic> confirmedPlace,
     required List<String> members,
+    required DateTime? appointmentDate,
   }) async {
     final roomRef = _db.collection('rooms').doc(roomId);
     final histRef = roomRef.collection('history').doc();
@@ -124,7 +125,9 @@ class RoomService {
       tx.set(histRef, {
         'confirmedPlace':  confirmedPlace,
         'members':         members,
-        'appointmentDate': data['appointmentDate'],
+        'appointmentDate': appointmentDate != null
+            ? Timestamp.fromDate(appointmentDate)
+            : null,
         'intimacyScore':   data['intimacyScore'],
         'date':            FieldValue.serverTimestamp(),
       });
@@ -137,9 +140,10 @@ class RoomService {
     required String roomId,
     required Map<String, dynamic> confirmedPlace,
     required List<String> members,
+    DateTime? appointmentDate,
   }) async {
     await saveConfirmHistory(
-        roomId: roomId, confirmedPlace: confirmedPlace, members: members);
+        roomId: roomId, confirmedPlace: confirmedPlace, members: members, appointmentDate: appointmentDate);
 
     final roomRef = _db.collection('rooms').doc(roomId);
     final batch   = _db.batch();

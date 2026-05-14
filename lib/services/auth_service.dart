@@ -50,4 +50,10 @@ class AuthService {
     final snap = await _db.collection('users').doc(userId).get();
     return snap.exists ? snap.data() : null;
   }
+
+  // 유저 정보 실시간 구독 (로컬 캐시 즉시 반환)
+  Stream<Map<String, dynamic>?> watchUserInfo(String userId) {
+    return _db.collection('users').doc(userId).snapshots()
+        .map((snap) => snap.exists ? snap.data() : null);
+  }
 }

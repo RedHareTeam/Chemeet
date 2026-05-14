@@ -1,8 +1,8 @@
-import 'dart:async';
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:chemeet/app_theme.dart';
 import '../services/analysis_service.dart';
+import '../widgets/app_dialog.dart';
 import 'room_home_screen.dart';
 
 class AnalyzingScreen extends StatefulWidget {
@@ -28,59 +28,23 @@ class AnalyzingScreen extends StatefulWidget {
 }
 
 class _AnalyzingScreenState extends State<AnalyzingScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late AnimationController _rotateController;
-  late AnimationController _progressController;
-  late Animation<double> _pulseAnim;
-  late Animation<double> _rotateAnim;
-
-  int _stepIndex = 0;
-  final List<String> _steps = [
-    '대화 파일 파싱 중...',
-    '감성 분석 중...',
-    '친밀도 점수 계산 중...',
-    '취향 키워드 추출 중...',
-    '분석 완료!',
-  ];
-
-  Timer? _stepTimer;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-
-    _pulseController = AnimationController(
+    _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-
-    _rotateController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
+    _startAnalysis();
+  }
 
-    _progressController = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: (_steps.length - 1) * 900),
-    );
-
-    _pulseAnim = Tween<double>(begin: 0.88, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-
-    _rotateAnim = Tween<double>(begin: 0, end: 1).animate(_rotateController);
-
-    _progressController.animateTo(0.9);
-
-    _stepTimer = Timer.periodic(const Duration(milliseconds: 900), (t) {
-      if (_stepIndex < _steps.length - 1) {
-        setState(() => _stepIndex++);
-      } else {
-        t.cancel();
-        _startAnalysis();
-      }
-    });
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
   Future<void> _startAnalysis() async {
@@ -90,12 +54,6 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
         txtContent: widget.txtContent,
       );
       if (!mounted) return;
-      await _progressController.animateTo(
-        1.0,
-        duration: const Duration(milliseconds: 300),
-      );
-      if (!mounted) return;
-
       if (widget.isReAnalyze) {
         Navigator.pop(context);
       } else {
@@ -116,29 +74,21 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('분석 오류'),
-          content: const Text('분석 중 오류가 발생했어요.\n파일을 확인하고 다시 시도해주세요.'),
+        builder: (_) => AppDialog(
+          title: '분석 오류',
+          content: '분석 중 오류가 발생했어요.\n파일을 확인하고 다시 시도해주세요.',
+          icon: Icons.error_outline_rounded,
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('확인', style: TextStyle(color: AppTheme.primary)),
+            DialogAction(
+              label: '확인',
+              primary: true,
+              onTap: () => Navigator.pop(context),
             ),
           ],
         ),
       );
       if (mounted) Navigator.pop(context);
     }
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    _rotateController.dispose();
-    _progressController.dispose();
-    _stepTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -152,174 +102,58 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
             end: Alignment.bottomRight,
           ),
         ),
-        child: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // 펄스 + 회전 아이콘
-                  ScaleTransition(
-                    scale: _pulseAnim,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // 회전 링
-                        RotationTransition(
-                          turns: _rotateAnim,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: AnimatedBuilder(
+                  animation: _ctrl,
+                  builder: (_, child) => Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Transform.rotate(
+                        angle: _ctrl.value * 2 * pi,
+                        child: CustomPaint(
+                          size: const Size(120, 120),
+                          painter: _SpinnerPainter(),
+                        ),
+                      ),
+                      ClipOval(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                           child: Container(
-                            width: 130,
-                            height: 130,
+                            width: 72,
+                            height: 72,
                             decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.85),
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.25),
-                                width: 2,
-                              ),
                             ),
-                            child: CustomPaint(painter: _ArcPainter()),
-                          ),
-                        ),
-                        // 외곽 글로우
-                        Container(
-                          width: 110,
-                          height: 110,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withValues(alpha: 0.15),
-                          ),
-                        ),
-                        // 중앙 아이콘
-                        ClipOval(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                            child: Container(
-                              width: 80,
-                              height: 80,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.chat_bubble_outline_rounded,
-                                  size: 34,
-                                  color: AppTheme.primary,
-                                ),
-                              ),
+                            child: const Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 28,
+                              color: Color(0xFFFF9BDE),
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 44),
-
-                  Text(
-                    widget.isReAnalyze ? '리포트를 업데이트하고 있어요' : '대화를 분석하고 있어요',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: -0.3,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 400),
-                    transitionBuilder: (child, anim) => FadeTransition(
-                      opacity: anim,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.3),
-                          end: Offset.zero,
-                        ).animate(anim),
-                        child: child,
                       ),
-                    ),
-                    child: Text(
-                      _steps[_stepIndex],
-                      key: ValueKey(_stepIndex),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.8),
-                      ),
-                    ),
+                    ],
                   ),
-
-                  const SizedBox(height: 36),
-
-                  // 진행 바 (글라스)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: AnimatedBuilder(
-                          animation: _progressController,
-                          builder: (_, __) => Column(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: LinearProgressIndicator(
-                                  value: _progressController.value,
-                                  backgroundColor: Colors.white.withValues(alpha: 0.25),
-                                  valueColor: const AlwaysStoppedAnimation(Colors.white),
-                                  minHeight: 8,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${(_progressController.value * 100).toInt()}%',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // 스텝 인디케이터
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(_steps.length, (i) {
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: i == _stepIndex ? 24 : 8,
-                        height: 8,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          color: i <= _stepIndex
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      );
-                    }),
-                  ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 36),
+              Text(
+                widget.isReAnalyze ? '리포트를 업데이트하고 있어요' : '대화를 분석하고 있어요',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -327,20 +161,29 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
   }
 }
 
-// 회전 아크 그리기
-class _ArcPainter extends CustomPainter {
+class _SpinnerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.6)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 5;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const sweepAngle = 2 * pi * 0.75;
 
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    canvas.drawArc(rect, -1.2, 2.4, false, paint);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..shader = SweepGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0),
+          Colors.white.withValues(alpha: 0.9),
+        ],
+        endAngle: sweepAngle,
+      ).createShader(rect);
+
+    canvas.drawArc(rect, 0, sweepAngle, false, paint);
   }
 
   @override
-  bool shouldRepaint(_) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

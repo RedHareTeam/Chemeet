@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../services/history_service.dart';
 import '../services/room_service.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/glass_popup_menu.dart';
 import '../widgets/glassmorphic_container.dart';
 import 'date_setting_screen.dart';
 import 'map_screen.dart';
@@ -17,6 +18,7 @@ class RoomHomeScreen extends StatefulWidget {
   final String myUserId;
   final String myUserName;
   final int maxMembers;
+  final Map<String, dynamic>? initialRoomData;
 
   const RoomHomeScreen({
     super.key,
@@ -24,6 +26,7 @@ class RoomHomeScreen extends StatefulWidget {
     required this.myUserId,
     required this.myUserName,
     required this.maxMembers,
+    this.initialRoomData,
   });
 
   @override
@@ -49,11 +52,15 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
   @override
   void initState() {
     super.initState();
+    _roomData = widget.initialRoomData;
+    _intimacyScore = (widget.initialRoomData?['intimacyScore'] as num?)?.toInt() ?? 0;
+    _keywords = List<String>.from(widget.initialRoomData?['keywords'] ?? []);
+    _analysisReady = widget.initialRoomData?.containsKey('intimacyScore') ?? false;
     _scoreAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _scoreCounter = IntTween(begin: 0, end: 0)
+    _scoreCounter = IntTween(begin: 0, end: _intimacyScore)
         .animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
     _watchRoom();
     _watchSchedules();
@@ -128,6 +135,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
       builder: (_) => AppDialog(
         title: '방 나가기',
         content: '방을 나가면 다시 초대 코드로 입장해야 해요.\n지도/투표 진행 중이라면 내용이 초기화됩니다.\n\n정말 나가시겠어요?',
+        icon: Icons.logout_rounded,
         actions: [
           DialogAction(label: '취소', onTap: () => Navigator.pop(context, false)),
           DialogAction(
@@ -166,6 +174,10 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         enabled: true,
         onTap: () {
           final places = List<Map<String, dynamic>>.from(_roomData?['places'] ?? []);
+          final dateTs = _roomData?['appointmentDate'];
+          final appointmentDate = dateTs != null
+              ? (dateTs as dynamic).toDate() as DateTime
+              : null;
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => PlaceScreen(
               roomId: widget.roomId,
@@ -173,6 +185,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
               userName: widget.myUserName,
               members: members,
               places: places,
+              appointmentDate: appointmentDate,
             ),
           ));
         },
@@ -612,7 +625,9 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
               child: Row(
                     children: [
                       // 더보기 메뉴
-                      PopupMenuButton<String>(
+                      GlassPopupMenu(
+                        openUpward: true,
+                        alignRight: false,
                         onSelected: (v) {
                           if (v == 'report') {
                             Navigator.push(context, MaterialPageRoute(
@@ -621,8 +636,10 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                           }
                           if (v == 'leave') _confirmLeave();
                         },
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        offset: const Offset(0, -112),
+                        items: const [
+                          GlassMenuItem(value: 'report', icon: Icons.refresh_rounded, label: '리포트 업데이트'),
+                          GlassMenuItem(value: 'leave', icon: Icons.logout_rounded, label: '방 나가기', destructive: true),
+                        ],
                         child: Container(
                           width: 50,
                           height: 50,
@@ -632,24 +649,6 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                           ),
                           child: const Icon(Icons.more_horiz_rounded, color: AppTheme.textMuted, size: 22),
                         ),
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(
-                            value: 'report',
-                            child: Row(children: [
-                              Icon(Icons.refresh_rounded, size: 18, color: AppTheme.primary),
-                              SizedBox(width: 10),
-                              Text('리포트 업데이트'),
-                            ]),
-                          ),
-                          const PopupMenuItem(
-                            value: 'leave',
-                            child: Row(children: [
-                              Icon(Icons.logout_rounded, size: 18, color: AppTheme.error),
-                              SizedBox(width: 10),
-                              Text('방 나가기', style: TextStyle(color: AppTheme.error)),
-                            ]),
-                          ),
-                        ],
                       ),
                       const SizedBox(width: 10),
 

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../constants.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/kakao_map_webview.dart';
 import '../widgets/glassmorphic_container.dart';
 import '../widgets/gradient_button.dart';
@@ -60,6 +61,9 @@ class _MapScreenState extends State<MapScreen> {
   bool _mapReady      = false;
   bool _hasIntersection = false;
 
+  int _processedMsgCount = 0;
+  final List<Map<String, dynamic>> _pendingMessages = [];
+
   // 파트너 색상 (최대 3명 추가 지원)
   static const List<String> _partnerColors = ['#FF9BDE', '#34D399', '#FBBF24', '#60A5FA'];
 
@@ -73,7 +77,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
-    for (final s in _subs) s.cancel();
+    for (final s in _subs) { s.cancel(); }
     _saveTimer?.cancel();
     super.dispose();
   }
@@ -103,11 +107,12 @@ class _MapScreenState extends State<MapScreen> {
           context,
           MaterialPageRoute(
             builder: (_) => PlaceScreen(
-              roomId:   widget.roomId,
-              userId:   widget.myUserId,
-              userName: widget.myUserName,
-              members:  members,
-              places:   places,
+              roomId:          widget.roomId,
+              userId:          widget.myUserId,
+              userName:        widget.myUserName,
+              members:         members,
+              places:          places,
+              appointmentDate: _appointmentDate,
             ),
           ),
         );
@@ -204,12 +209,15 @@ class _MapScreenState extends State<MapScreen> {
     final sub = _circleService
         .watchMessages(roomId: widget.roomId)
         .listen((messages) {
-      if (messages.isEmpty) return;
-      final last = messages.last;
-      if (last['userId'] != widget.myUserId) {
-        _mapKey.currentState?.addMessage(
-          last['userId'], last['userName'], last['message'],
-        );
+      final newMessages = messages.sublist(_processedMsgCount);
+      _processedMsgCount = messages.length;
+      for (final msg in newMessages) {
+        if (msg['userId'] == widget.myUserId) continue;
+        if (_mapReady) {
+          _mapKey.currentState?.addMessage(msg['userId'], msg['userName'], msg['message']);
+        } else {
+          _pendingMessages.add(msg);
+        }
       }
     });
     _subs.add(sub);
@@ -219,6 +227,11 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _onMapReady() async {
     setState(() => _mapReady = true);
+
+    for (final msg in _pendingMessages) {
+      _mapKey.currentState?.addMessage(msg['userId'], msg['userName'], msg['message']);
+    }
+    _pendingMessages.clear();
 
     // 내 원 복원
     final myData = await _circleService.getMyCircle(
@@ -269,32 +282,30 @@ class _MapScreenState extends State<MapScreen> {
     _mapKey.currentState?.setDrawMode(false);
     _mapKey.currentState?.updateMyCircle(lat, lng, radius, widget.myUserName);
 
-    final msg = '${widget.myUserName}이(가) 구역을 설정했어요';
-    _circleService.sendMessage(
+    final msg = '${widget.myUserName}님이 구역을 설정했어요';
+    _mapKey.currentState?.addMessage(widget.myUserId, widget.myUserName, msg);
+    _updateIntersectionState();
+
+    // 원 저장 완료 후 메시지 전송 — 상대방에서 핀이 생긴 뒤 메시지가 도착하도록 순서 보장
+    _saveTimer?.cancel();
+    _circleService.saveMyCircle(
       roomId: widget.roomId,
       userId: widget.myUserId,
       userName: widget.myUserName,
-      message: msg,
-    );
-    _mapKey.currentState?.addMessage(widget.myUserId, widget.myUserName, msg);
-    _saveDebounced();
-    _updateIntersectionState();
+      lat: lat, lng: lng, radius: radius,
+    ).then((_) {
+      _circleService.sendMessage(
+        roomId: widget.roomId,
+        userId: widget.myUserId,
+        userName: widget.myUserName,
+        message: msg,
+      );
+    });
   }
 
   void _toggleDrawMode() {
     setState(() => _isDrawMode = !_isDrawMode);
     _mapKey.currentState?.setDrawMode(_isDrawMode);
-  }
-
-  void _saveDebounced() {
-    _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 500), () {
-      _circleService.saveMyCircle(
-        roomId: widget.roomId, userId: widget.myUserId,
-        userName: widget.myUserName,
-        lat: _myLat, lng: _myLng, radius: _myRadius,
-      );
-    });
   }
 
   // ── 교집합 체크 ───────────────────────────────────────────
@@ -424,17 +435,15 @@ class _MapScreenState extends State<MapScreen> {
         if (mounted) {
           await showDialog(
             context: context,
-            builder: (_) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              title: const Text('장소가 부족해요'),
-              content: const Text(
-                  '교집합이 너무 작아 추천 장소가 2곳 미만이에요.\n원을 조금 더 넓게 그려주세요.'),
+            builder: (_) => AppDialog(
+              title: '장소가 부족해요',
+              content: '교집합이 너무 작아 추천 장소가 2곳 미만이에요.\n원을 조금 더 넓게 그려주세요.',
+              icon: Icons.location_off_outlined,
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('확인',
-                      style: TextStyle(color: AppTheme.primary)),
+                DialogAction(
+                  label: '확인',
+                  primary: true,
+                  onTap: () => Navigator.pop(context),
                 ),
               ],
             ),
@@ -627,7 +636,9 @@ class _MapScreenState extends State<MapScreen> {
                             Text(
                               _isDrawMode
                                   ? '손가락으로 원을 그려보세요'
-                                  : '이동 모드  ·  반경 ${(_myRadius / 1000).toStringAsFixed(1)}km',
+                                  : _myCircleDrawn
+                                      ? '이동 모드  ·  반경 ${(_myRadius / 1000).toStringAsFixed(1)}km'
+                                      : '이동 모드  ·  원을 그려보세요',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,

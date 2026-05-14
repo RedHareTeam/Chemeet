@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:chemeet/screens/room_home_screen.dart';
 import 'package:chemeet/screens/upload_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../services/room_service.dart';
+import '../widgets/glass_popup_menu.dart';
 import '../widgets/glassmorphic_container.dart';
 import 'package:chemeet/app_theme.dart';
 import 'auth_screen.dart';
@@ -27,12 +29,15 @@ class _RoomListScreenState extends State<RoomListScreen> {
   String _searchQuery = '';
   String _filter = '모든 방';
   bool _searchOpen = false;
+  StreamSubscription? _userNameSub;
 
   @override
   void initState() {
     super.initState();
     _roomStream = _roomService.watchMyRooms(_myUserId);
-    _loadUserName();
+    _userNameSub = _authService.watchUserInfo(_myUserId).listen((info) {
+      if (mounted) setState(() => _myUserName = info?['userName'] ?? '');
+    });
     _searchController.addListener(() {
       setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
     });
@@ -40,11 +45,13 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   @override
   void dispose() {
+    _userNameSub?.cancel();
     _codeController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  // ignore: unused_element
   Future<void> _loadUserName() async {
     final info = await _authService.getUserInfo(_myUserId);
     if (mounted) setState(() => _myUserName = info?['userName'] ?? '');
@@ -56,11 +63,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   Future<void> _joinRoom() async {
     _codeController.clear();
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _JoinSheet(controller: _codeController, onJoin: _handleJoinCode),
+      builder: (_) => _JoinDialog(controller: _codeController, onJoin: _handleJoinCode),
     );
   }
 
@@ -91,6 +96,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
           myUserId: _myUserId,
           myUserName: _myUserName,
           maxMembers: room['maxMembers'] ?? 2,
+          initialRoomData: room,
         ),
       ),
     );
@@ -177,23 +183,24 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   ),
 
                   // 인사 + 닉네임
-                  if (_myUserName.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              '안녕하세요!',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: AppTheme.textMuted,
-                              ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '안녕하세요!',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.textMuted,
                             ),
-                            const SizedBox(height: 2),
-                            Text(
+                          ),
+                          const SizedBox(height: 2),
+                          SizedBox(
+                            height: 28,
+                            child: Text(
                               _myUserName,
                               style: const TextStyle(
                                 fontSize: 22,
@@ -202,10 +209,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 letterSpacing: -0.4,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
 
                   // 검색바 (필터 위에, 펼쳐질 때만)
                   SliverToBoxAdapter(
@@ -322,7 +330,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: AppTheme.border),
                                       ),
                                       child: const Icon(
                                         Icons.search_rounded,
@@ -346,7 +353,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     )
                   else if (rooms.isEmpty)
                     SliverFillRemaining(
-                      child: _buildEmpty(allRooms.isEmpty),
+                      hasScrollBody: false,
+                      child: _buildEmpty(allRooms.isEmpty, botPad),
                     )
                   else
                     SliverPadding(
@@ -384,9 +392,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  Widget _buildEmpty(bool noRoomsAtAll) {
-    return Center(
-      child: Column(
+  Widget _buildEmpty(bool noRoomsAtAll, double botPad) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: botPad + 66),
+      child: Center(
+        child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
@@ -428,6 +438,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -467,15 +478,17 @@ class _FloatingToolbar extends StatelessWidget {
           child: Row(
             children: [
               // 프로필/설정 버튼
-              PopupMenuButton<String>(
+              GlassPopupMenu(
+                openUpward: true,
+                alignRight: false,
                 onSelected: (v) {
                   if (v == 'nickname') onChangeNickname();
                   if (v == 'logout') onSignOut();
                 },
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                offset: const Offset(0, -112),
+                items: const [
+                  GlassMenuItem(value: 'nickname', icon: Icons.edit_outlined, label: '닉네임 변경'),
+                  GlassMenuItem(value: 'logout', icon: Icons.logout_rounded, label: '로그아웃', destructive: true),
+                ],
                 child: Container(
                   width: 50,
                   height: 50,
@@ -489,28 +502,6 @@ class _FloatingToolbar extends StatelessWidget {
                     size: 22,
                   ),
                 ),
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'nickname',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_outlined, size: 18, color: AppTheme.primary),
-                        SizedBox(width: 10),
-                        Text('닉네임 변경'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout_rounded, size: 18, color: AppTheme.error),
-                        SizedBox(width: 10),
-                        Text('로그아웃', style: TextStyle(color: AppTheme.error)),
-                      ],
-                    ),
-                  ),
-                ],
               ),
               const SizedBox(width: 10),
 
@@ -543,20 +534,24 @@ class _FloatingToolbar extends StatelessWidget {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: onCreateRoom,
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.add_rounded, color: Colors.white, size: 20),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    '새 방',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
+                              splashColor: Colors.white.withValues(alpha: 0.22),
+                              highlightColor: Colors.white.withValues(alpha: 0.12),
+                              child: SizedBox.expand(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      '새 방',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -575,20 +570,24 @@ class _FloatingToolbar extends StatelessWidget {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: onJoinRoom,
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.vpn_key_rounded, color: Colors.white, size: 18),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    '참여',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
+                              splashColor: Colors.white.withValues(alpha: 0.22),
+                              highlightColor: Colors.white.withValues(alpha: 0.12),
+                              child: SizedBox.expand(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(Icons.vpn_key_rounded, color: Colors.white, size: 18),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      '참여',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -616,27 +615,48 @@ class _NicknameDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 0,
+      backgroundColor: Colors.white,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '닉네임 변경',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textDark,
-              ),
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.edit_outlined,
+                    size: 20,
+                    color: AppTheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  '닉네임 변경',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             TextField(
               controller: controller,
               autofocus: true,
               maxLength: 12,
               decoration: InputDecoration(
-                hintText: '새 닉네임 입력',
+                hintText: '새 닉네임을 입력하세요',
                 counterText: '',
                 filled: true,
                 fillColor: AppTheme.bg,
@@ -645,11 +665,11 @@ class _NicknameDialog extends StatelessWidget {
                   vertical: 14,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: const BorderSide(color: AppTheme.border),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
                 ),
               ),
@@ -659,16 +679,59 @@ class _NicknameDialog extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: TextButton(
+                  child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('취소'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.textMuted,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      '취소',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, controller.text),
-                    child: const Text('변경'),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primary.withValues(alpha: 0.28),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => Navigator.pop(context, controller.text),
+                        borderRadius: BorderRadius.circular(14),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Text(
+                            '변경',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -681,20 +744,20 @@ class _NicknameDialog extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════
-// 초대코드 바텀시트
+// 초대코드 다이얼로그
 // ════════════════════════════════════════════════════════════
 
-class _JoinSheet extends StatefulWidget {
+class _JoinDialog extends StatefulWidget {
   final TextEditingController controller;
   final Future<void> Function(String code) onJoin;
 
-  const _JoinSheet({required this.controller, required this.onJoin});
+  const _JoinDialog({required this.controller, required this.onJoin});
 
   @override
-  State<_JoinSheet> createState() => _JoinSheetState();
+  State<_JoinDialog> createState() => _JoinDialogState();
 }
 
-class _JoinSheetState extends State<_JoinSheet> {
+class _JoinDialogState extends State<_JoinDialog> {
   bool _loading = false;
 
   Future<void> _submit() async {
@@ -707,122 +770,155 @@ class _JoinSheetState extends State<_JoinSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + bottomInset),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppTheme.border,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppTheme.primary, Color(0xFF9B8BFF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.vpn_key_rounded, color: Colors.white, size: 26),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            '초대 코드로 입장',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textDark,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            '친구에게 받은 6자리 코드를 입력하세요',
-            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: widget.controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.characters,
-            textAlign: TextAlign.center,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-              LengthLimitingTextInputFormatter(6),
-            ],
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 8,
-              color: AppTheme.textDark,
-            ),
-            decoration: InputDecoration(
-              hintText: '------',
-              hintStyle: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 8,
-                color: AppTheme.border,
-              ),
-              filled: true,
-              fillColor: AppTheme.bg,
-              contentPadding: const EdgeInsets.symmetric(vertical: 16),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: AppTheme.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
-              ),
-            ),
-            onSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _loading ? null : _submit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 0,
+      backgroundColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryBg,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                elevation: 0,
+                child: const Icon(Icons.vpn_key_rounded, color: AppTheme.primary, size: 22),
               ),
-              child: _loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      '입장하기',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                    ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            const Text(
+              '초대 코드 입력',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textDark,
+                letterSpacing: -0.3,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '친구에게 받은 6자리 코드를 입력하세요',
+              style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: widget.controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              textAlign: TextAlign.center,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                LengthLimitingTextInputFormatter(6),
+              ],
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 10,
+                color: AppTheme.textDark,
+              ),
+              decoration: InputDecoration(
+                hintText: '······',
+                hintStyle: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 10,
+                  color: AppTheme.border,
+                ),
+                filled: true,
+                fillColor: AppTheme.bg,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                ),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.textMuted,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      '취소',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primary.withValues(alpha: 0.28),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _loading ? null : _submit,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Center(
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    '입장하기',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

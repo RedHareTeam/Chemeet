@@ -4,6 +4,7 @@ import 'package:chemeet/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/history_service.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/glassmorphic_container.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/platform_html_view.dart';
@@ -368,7 +369,7 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; font-family:"Noto Sans KR",-apple-system,"Apple SD Gothic Neo",system-ui,sans-serif; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; font-family:"Noto Sans KR",-apple-system,"Apple SD Gothic Neo",system-ui,sans-serif; }
     body { width:100vw; height:100vh; overflow:hidden; }
     #map    { width:100%; height:100%; }
     #canvas { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:2; }
@@ -377,6 +378,16 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
       position:absolute; pointer-events:auto; cursor:pointer;
       display:flex; flex-direction:column; align-items:center;
       transform:translate(-50%,-100%);
+    }
+    .pin-body {
+      display:flex; flex-direction:column; align-items:center;
+      transition: transform 0.32s cubic-bezier(0.34,1.56,0.64,1);
+      transform-origin: bottom center;
+    }
+    .pin:active .pin-body {
+      transform: scale(0.82);
+      transition-duration: 0.06s;
+      transition-timing-function: ease-in;
     }
     .pin-circle {
       width:46px; height:46px; border-radius:50%;
@@ -402,6 +413,13 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
       border-radius:50%; display:flex; align-items:center; justify-content:center; flex-direction:column;
       color:white; border:3px solid rgba(255,255,255,0.9);
       box-shadow:0 4px 16px rgba(0,0,0,0.2);
+      transition: transform 0.32s cubic-bezier(0.34,1.56,0.64,1);
+      transform-origin: center;
+    }
+    .cpin:active .cpin-circle {
+      transform: scale(0.82);
+      transition-duration: 0.06s;
+      transition-timing-function: ease-in;
     }
     .cpin-num   { font-weight:800; line-height:1; }
     .cpin-sub   { font-size:9px; opacity:0.9; font-weight:600; }
@@ -420,6 +438,7 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
 
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${widget.kakaoApiKey}"></script>
   <script>
+    document.addEventListener('touchstart', function(){}, {passive:true});
     var map;
     var canvas   = document.getElementById('canvas');
     var ctx      = canvas.getContext('2d');
@@ -628,11 +647,13 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
       el.style.left   = pt.x + 'px';
       el.style.top    = pt.y + 'px';
       el.innerHTML =
-        '<div class="pin-circle" style="background:' + color + '">' +
-          '<span class="pin-count">' + p.count + '</span>' +
-          '<span class="pin-unit">&#54924;</span>' +
+        '<div class="pin-body">' +
+          '<div class="pin-circle" style="background:' + color + '">' +
+            '<span class="pin-count">' + p.count + '</span>' +
+            '<span class="pin-unit">&#54924;</span>' +
+          '</div>' +
+          '<div class="pin-tail" style="border-top:8px solid ' + color + '"></div>' +
         '</div>' +
-        '<div class="pin-tail" style="border-top:8px solid ' + color + '"></div>' +
         '<div class="pin-label">' + label + '</div>';
       el.addEventListener('click', function(e) { e.stopPropagation(); onPinTap(idx); });
       pinsDiv.appendChild(el);
@@ -912,18 +933,17 @@ class _VisitCardState extends State<_VisitCard> {
   Future<void> _confirmDelete() async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('만남 삭제'),
-        content: const Text('이 만남 기록과 모든 후기를 삭제할까요?\n삭제하면 상대방에게도 사라져요.'),
+      builder: (_) => AppDialog(
+        title: '만남 삭제',
+        content: '이 만남 기록과 모든 후기를 삭제할까요?\n삭제하면 상대방에게도 사라져요.',
+        icon: Icons.delete_outline_rounded,
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소', style: TextStyle(color: AppTheme.textMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제', style: TextStyle(color: AppTheme.error)),
+          DialogAction(label: '취소', onTap: () => Navigator.pop(context, false)),
+          DialogAction(
+            label: '삭제',
+            primary: true,
+            destructive: true,
+            onTap: () => Navigator.pop(context, true),
           ),
         ],
       ),
@@ -1238,21 +1258,17 @@ class _RecordItem extends StatelessWidget {
                   onTap: () async {
                     final ok = await showDialog<bool>(
                       context: context,
-                      builder: (_) => AlertDialog(
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
-                        title: const Text('기록 삭제'),
-                        content: const Text('이 기록을 삭제할까요?'),
+                      builder: (_) => AppDialog(
+                        title: '기록 삭제',
+                        content: '이 기록을 삭제할까요?',
+                        icon: Icons.delete_outline_rounded,
                         actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('취소',
-                                style: TextStyle(color: AppTheme.textMuted)),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('삭제',
-                                style: TextStyle(color: AppTheme.error)),
+                          DialogAction(label: '취소', onTap: () => Navigator.pop(context, false)),
+                          DialogAction(
+                            label: '삭제',
+                            primary: true,
+                            destructive: true,
+                            onTap: () => Navigator.pop(context, true),
                           ),
                         ],
                       ),
