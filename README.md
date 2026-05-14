@@ -17,7 +17,7 @@
 
 ## 남은 작업
 
-- 팝업창/메뉴 UI/UX 개선
+- 사용자 위치로 지도 로드
 
 ---
 
@@ -58,7 +58,7 @@ Chemeet/
     │   ├── room_list_screen.dart   # 내 방 목록 조회, 방 생성/입장
     │   ├── room_home_screen.dart   # 방 홈 — 친밀도 리포트, 약속 현황, 메뉴
     │   ├── upload_screen.dart      # 대화 txt 업로드 및 분석 요청
-    │   ├── analyzing_screen.dart   # 분석 진행 화면
+    │   ├── analyzing_screen.dart   # 분석 진행 화면 (코멧 스피너 애니메이션)
     │   ├── date_setting_screen.dart# 약속 날짜/시간 설정
     │   ├── map_screen.dart         # 카카오맵 원 그리기 및 장소 추천 요청
     │   ├── place_screen.dart       # 후보 장소 투표 및 최종 장소 확정
@@ -72,12 +72,12 @@ Chemeet/
     │   ├── history_service.dart    # 방문 히스토리 조회 및 실시간 구독
     │   └── place_service.dart      # 지도 기반 주변 장소 검색
     └── widgets/
-        ├── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시
+        ├── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시, 핀치줌 오버레이 동기화
         ├── app_dialog.dart         # 공통 다이얼로그
+        ├── glass_popup_menu.dart   # 글라스모피즘 팝업 메뉴
         ├── glassmorphic_container.dart # 반투명 블러 컨테이너
-        ├── gradient_button.dart    # 그라데이션 버튼 (CircleForwardButton 포함)
-        ├── platform_html_view.dart # iOS/Android/Web 분기 WebView
-        └── screen_header.dart      # (레거시) 구 화면 헤더
+        ├── gradient_button.dart    # 그라데이션 버튼
+        └── platform_html_view.dart # iOS/Android/Web 분기 WebView
 ```
 
 ---
@@ -168,20 +168,20 @@ users/{userId}
 
 rooms/{roomId}
 ├── createdBy: string
-├── members: [userId, ...]
+├── members: [userId, ...]          # 최대 5명
 ├── memberNames: { userId: userName }
 ├── roomTitle: string
 ├── inviteCode: string
-├── maxMembers: number
-├── status: string                # waiting / drawing / voting / confirmed / idle
+├── maxMembers: number              # 3~5
+├── status: string                  # waiting / drawing / voting / confirmed
 ├── intimacyScore: number
 ├── keywords: [string, ...]
-├── partnerName: string
 ├── searchQuery: string
 ├── mood: [string, ...]
 ├── appointmentDate: timestamp
 ├── places: [Map, ...]
 ├── confirmedPlace: Map
+├── historySaved: boolean           # 히스토리 중복 저장 방지 플래그
 └── createdAt: timestamp
 
 rooms/{roomId}/circles/{userId}
@@ -191,16 +191,22 @@ rooms/{roomId}/circles/{userId}
 rooms/{roomId}/votes/{userId}
 └── selectedPlaceId: string
 
+rooms/{roomId}/messages/{messageId}
+├── userId, userName: string
+├── message: string
+└── createdAt: timestamp
+
 rooms/{roomId}/history/{historyId}
 ├── confirmedPlace: Map
 ├── members: [userId, ...]
 ├── appointmentDate: timestamp
+├── intimacyScore: number
 └── date: timestamp
 
 rooms/{roomId}/history/{historyId}/records/{recordId}
-├── lat, lng: number
-├── name, address, category: string
-└── visitedAt: timestamp
+├── userId, userName: string
+├── review: string
+└── createdAt: timestamp
 ```
 
 ---
@@ -208,11 +214,10 @@ rooms/{roomId}/history/{historyId}/records/{recordId}
 ## 상태 흐름
 
 ```
-waiting   → 방 생성 후 대기
+waiting   → 방 생성 후 멤버 대기
 drawing   → 날짜 확정 후 지도에서 원 그리기
 voting    → 장소 후보 투표 진행
-confirmed → 최종 장소 확정
-idle      → 전체 초기화 후 다시 시작
+confirmed → 최종 장소 확정 (확인 후 waiting으로 초기화)
 ```
 
 ---
