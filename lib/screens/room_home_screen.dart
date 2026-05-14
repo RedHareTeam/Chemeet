@@ -62,6 +62,11 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     );
     _scoreCounter = IntTween(begin: 0, end: _intimacyScore)
         .animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));
+    if (_intimacyScore > 0) {
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted) _scoreAnim.forward();
+      });
+    }
     _watchRoom();
     _watchSchedules();
   }
@@ -72,7 +77,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
       final newScore = (room['intimacyScore'] as num?)?.toInt() ?? 0;
       final newKeywords = List<String>.from(room['keywords'] ?? []);
 
-      if (newScore != _intimacyScore || !_analysisReady) {
+      if (newScore != _intimacyScore) {
         _scoreAnim.reset();
         _scoreCounter = IntTween(begin: 0, end: newScore)
             .animate(CurvedAnimation(parent: _scoreAnim, curve: Curves.easeOut));

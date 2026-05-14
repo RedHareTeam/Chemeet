@@ -184,6 +184,7 @@ class RoomService {
     await _db.collection('rooms').doc(roomId).update({
       'appointmentDate': Timestamp.fromDate(appointmentDate),
       'status': 'drawing',
+      'historySaved': FieldValue.delete(),
     });
   }
 

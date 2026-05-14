@@ -391,7 +391,6 @@ class _PlaceScreenState extends State<PlaceScreen>
           'places': FieldValue.delete(),
           'confirmedPlace': FieldValue.delete(),
           'appointmentDate': FieldValue.delete(),
-          'historySaved': FieldValue.delete(),
         });
     for (final col in ['circles', 'messages', 'votes']) {
       await _roomService.deleteSubcollection(widget.roomId, col);
