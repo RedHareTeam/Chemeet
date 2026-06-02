@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from kakao.kakao_parser import parse_kakao_txt
 from nlp.openai_analyzer import analyze_with_openai
 from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
@@ -11,6 +12,7 @@ from recommend.weather import get_weather, get_weather_forecast
 from recommend.midpoint import find_best_midpoint
 
 app = Flask(__name__)
+CORS(app)
 
 @app.route('/')
 def index():

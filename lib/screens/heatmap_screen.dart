@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:chemeet/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import '../services/history_service.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/glassmorphic_container.dart';
@@ -16,6 +18,7 @@ class _PlaceGroup {
   final double lng;
   final String address;
   final String category;
+  final String? url;
   final List<Map<String, dynamic>> historyEntries;
 
   _PlaceGroup({
@@ -24,6 +27,7 @@ class _PlaceGroup {
     required this.lng,
     required this.address,
     required this.category,
+    this.url,
     required this.historyEntries,
   });
 
@@ -100,12 +104,14 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       if (groups.containsKey(key)) {
         groups[key]!.historyEntries.add(h);
       } else {
+        final rawUrl = (place['url'] ?? place['kakaoUrl']) as String?;
         groups[key] = _PlaceGroup(
           name:     name,
           lat:      lat,
           lng:      lng,
           address:  (place['address']  as String?) ?? '',
           category: (place['category'] as String?) ?? '',
+          url:      (rawUrl?.isNotEmpty == true) ? rawUrl : null,
           historyEntries: [h],
         );
       }
@@ -131,12 +137,14 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _PlaceDetailSheet(
-        roomId:         widget.roomId,
-        myUserId:       widget.myUserId,
-        myUserName:     widget.myUserName,
-        initialGroup:   group,
-        historyService: _historyService,
+      builder: (_) => PointerInterceptor(
+        child: _PlaceDetailSheet(
+          roomId:         widget.roomId,
+          myUserId:       widget.myUserId,
+          myUserName:     widget.myUserName,
+          initialGroup:   group,
+          historyService: _historyService,
+        ),
       ),
     );
   }
@@ -163,7 +171,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
           // ── 상단 오버레이 ──────────────────────────────────
           Positioned(
             top: topPad + 8, left: 16, right: 16,
-            child: GlassmorphicContainer(
+            child: PointerInterceptor(child: GlassmorphicContainer(
               padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
               child: Row(
                 children: [
@@ -199,8 +207,9 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                         context: context,
                         isScrollControlled: true,
                         backgroundColor: Colors.transparent,
-                        builder: (_) =>
-                            _IntimacyGraphSheet(history: _rawHistory),
+                        builder: (_) => PointerInterceptor(
+                          child: _IntimacyGraphSheet(history: _rawHistory),
+                        ),
                       ),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -229,7 +238,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                     ),
                 ],
               ),
-            ),
+            )),
           ),
 
           // ── 빈 상태 ────────────────────────────────────────
@@ -273,7 +282,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
             Positioned(
               bottom: bottomPad + 20,
               right: 16,
-              child: GlassmorphicContainer(
+              child: PointerInterceptor(child: GlassmorphicContainer(
                 borderRadius: BorderRadius.circular(14),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 sigmaX: 10, sigmaY: 10,
@@ -297,7 +306,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                     _legendRow(AppTheme.accent, '4회+'),
                   ],
                 ),
-              ),
+              )),
             ),
         ],
       ),
@@ -382,7 +391,7 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
     .pin-body {
       display:flex; flex-direction:column; align-items:center;
       transition: transform 0.32s cubic-bezier(0.34,1.56,0.64,1);
-      transform-origin: bottom center;
+      transform-origin: center center;
     }
     .pin:active .pin-body {
       transform: scale(0.82);
@@ -393,10 +402,11 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
       width:46px; height:46px; border-radius:50%;
       display:flex; align-items:center; justify-content:center; flex-direction:column;
       color:white; box-shadow:0 4px 14px rgba(0,0,0,0.18); border:2.5px solid rgba(255,255,255,0.9);
+      z-index:1;
     }
     .pin-count { font-size:15px; font-weight:800; line-height:1; }
     .pin-unit  { font-size:8px; opacity:0.9; margin-top:1px; font-weight:600; }
-    .pin-tail  { width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; margin-top:-1px; }
+    .pin-tail  { width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; margin-top:-2px; z-index:0; }
     .pin-label {
       background:rgba(28,28,46,0.78); color:white; font-size:11px; font-weight:600;
       padding:3px 8px; border-radius:8px; margin-top:5px;
@@ -462,38 +472,24 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
         updatePinPositions();
       });
 
-      // 줌 완료: transform 리셋 후 재계산
+      // 줌 완료: 오버레이 표시 + 재계산
       kakao.maps.event.addListener(map, 'zoom_changed', function() {
         pinch = null;
-        resetTransform();
+        clearTimeout(_wzT);
+        canvas.style.opacity = pinsDiv.style.opacity = '1';
         redrawHeatmap();
-        if (clusterTimer) clearTimeout(clusterTimer);
-        clusterTimer = setTimeout(function() { renderPins(); redrawHeatmap(); }, 120);
+        renderPins();
+        redrawHeatmap();
       });
 
       var mapEl = document.getElementById('map');
+      var _wzT = null;
 
-      // 핀치 시작: 두 손가락 거리 기록
+      // 핀치 시작: 두 손가락이면 오버레이 숨김
       mapEl.addEventListener('touchstart', function(e) {
         if (e.touches.length === 2) {
-          pinch = {
-            dist: tdist(e.touches[0], e.touches[1]),
-            cx:   (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            cy:   (e.touches[0].clientY + e.touches[1].clientY) / 2
-          };
-        }
-      }, {passive: true});
-
-      // 핀치 이동: 스케일 비율로 canvas + pins CSS transform 적용
-      mapEl.addEventListener('touchmove', function(e) {
-        if (e.touches.length === 2 && pinch) {
-          var s = tdist(e.touches[0], e.touches[1]) / pinch.dist;
-          var t = 'scale(' + s + ')';
-          var o = pinch.cx + 'px ' + pinch.cy + 'px';
-          canvas.style.transform       = t;
-          canvas.style.transformOrigin = o;
-          pinsDiv.style.transform       = t;
-          pinsDiv.style.transformOrigin = o;
+          pinch = { dist: tdist(e.touches[0], e.touches[1]) };
+          canvas.style.opacity = pinsDiv.style.opacity = '0';
         }
       }, {passive: true});
 
@@ -503,10 +499,6 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
     function tdist(a, b) {
       var dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
       return Math.sqrt(dx*dx + dy*dy);
-    }
-    function resetTransform() {
-      canvas.style.transform = pinsDiv.style.transform = '';
-      canvas.style.transformOrigin = pinsDiv.style.transformOrigin = '';
     }
 
     // ── 데이터 주입 ────────────────────────────────────────────────
@@ -585,13 +577,13 @@ class _HeatmapMapViewState extends State<_HeatmapMapView> {
 
       spots.forEach(function(s) {
         var r, alpha;
-        if      (s.count >= 4) { r = 110; alpha = 0.50; }
-        else if (s.count >= 2) { r =  85; alpha = 0.40; }
-        else                   { r =  65; alpha = 0.28; }
+        if      (s.count >= 4) { r = 120; alpha = 0.42; }
+        else if (s.count >= 2) { r =  95; alpha = 0.37; }
+        else                   { r =  72; alpha = 0.34; }
         var rgb = heatRgb(s.count);
         var g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
         g.addColorStop(0,   'rgba(' + rgb + ',' + alpha + ')');
-        g.addColorStop(0.5, 'rgba(' + rgb + ',' + (alpha * 0.38) + ')');
+        g.addColorStop(0.5, 'rgba(' + rgb + ',' + (alpha * 0.52) + ')');
         g.addColorStop(1,   'rgba(' + rgb + ',0)');
         ctx.beginPath();
         ctx.arc(s.x, s.y, r, 0, 2 * Math.PI);
@@ -744,6 +736,7 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
           lng:           widget.initialGroup.lng,
           address:       widget.initialGroup.address,
           category:      widget.initialGroup.category,
+          url:           widget.initialGroup.url,
           historyEntries: entries,
         );
       });
@@ -758,8 +751,8 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
 
   Color _countColor(int count) {
     if (count >= 4) return AppTheme.accent;
-    if (count >= 2) return const Color(0xFF7C3AED);
-    return const Color(0xFF818CF8);
+    if (count >= 2) return AppTheme.intimacyMid;
+    return AppTheme.intimacyTop;
   }
 
   @override
@@ -855,6 +848,28 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                         ),
                       ),
                     ),
+                    if (_group.url != null) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => launchUrl(
+                          Uri.parse(_group.url!),
+                          mode: LaunchMode.inAppBrowserView,
+                        ),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryBg,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.map_outlined,
+                            size: 18,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1443,7 +1458,7 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
               decoration: BoxDecoration(
                 gradient: _canSubmit
                     ? const LinearGradient(
-                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        colors: [AppTheme.primary, AppTheme.gradientEnd],
                         begin: Alignment.centerLeft,
                         end: Alignment.centerRight,
                       )
@@ -1461,6 +1476,8 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
+                ).copyWith(
+                  elevation: WidgetStateProperty.all(0),
                 ),
                 child: _loading
                     ? const SizedBox(
@@ -1586,9 +1603,9 @@ class _IntimacyGraphPainter extends CustomPainter {
   static const _padB = 36.0;
 
   Color _scoreColor(int s) {
-    if (s >= 80) return AppTheme.primary;
-    if (s >= 60) return AppTheme.drawing;
-    if (s >= 40) return AppTheme.accent;
+    if (s >= 80) return AppTheme.intimacyTop;
+    if (s >= 60) return AppTheme.intimacyHigh;
+    if (s >= 40) return AppTheme.intimacyMid;
     return AppTheme.intimacyLow;
   }
 

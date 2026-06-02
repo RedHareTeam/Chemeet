@@ -135,6 +135,9 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
             leading: IconButton(
               icon: const Icon(Icons.chevron_left_rounded, size: 28, color: AppTheme.textDark),
               onPressed: () => Navigator.pop(context),
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              hoverColor: Colors.transparent,
             ),
             title: const Text(
               '약속 날짜 설정',
@@ -179,7 +182,7 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
                                   height: 32,
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
-                                      colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                      colors: [AppTheme.primary, AppTheme.gradientEnd],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                     ),
@@ -261,8 +264,8 @@ class _DateSettingScreenState extends State<DateSettingScreen> {
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
                                     colors: [
-                                      Color(0xFFFFF0FA),
-                                      Color(0xFFF0EEFF),
+                                      AppTheme.cardGradientStart,
+                                      AppTheme.cardGradientEnd,
                                     ],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
@@ -347,7 +350,7 @@ class _PickerTile extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: isSelected
               ? const LinearGradient(
-                  colors: [Color(0xFFFFF0FA), Color(0xFFF0EEFF)],
+                  colors: [AppTheme.cardGradientStart, AppTheme.cardGradientEnd],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 )
@@ -374,7 +377,7 @@ class _PickerTile extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: isSelected
                     ? const LinearGradient(
-                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        colors: [AppTheme.primary, AppTheme.gradientEnd],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       )

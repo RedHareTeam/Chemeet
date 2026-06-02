@@ -280,7 +280,7 @@ class _PlaceScreenState extends State<PlaceScreen>
     await FirebaseFirestore.instance
         .collection('rooms')
         .doc(widget.roomId)
-        .update({'places': [], 'status': 'drawing'});
+        .update({'places': [], 'status': 'drawing', 'updatedAt': FieldValue.serverTimestamp()});
   }
 
   /// 다시 만들기
@@ -419,6 +419,9 @@ class _PlaceScreenState extends State<PlaceScreen>
         leading: IconButton(
           icon: const Icon(Icons.chevron_left_rounded, size: 28, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          hoverColor: Colors.transparent,
         ),
         title: const Text(
           '장소 선택',
@@ -494,12 +497,13 @@ class _PlaceScreenState extends State<PlaceScreen>
                 unselectedLabelColor: AppTheme.textMuted,
                 indicator: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                    colors: [AppTheme.primary, AppTheme.gradientEnd],
                   ),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
+                splashBorderRadius: BorderRadius.circular(20),
                 labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 padding: const EdgeInsets.all(3),
               ),
@@ -742,7 +746,7 @@ class _PlaceCard extends StatelessWidget {
                               ? const LinearGradient(
                                   colors: [
                                     AppTheme.primary,
-                                    Color(0xFFFF7BAC)
+                                    AppTheme.gradientEnd
                                   ],
                                   begin: Alignment.centerLeft,
                                   end: Alignment.centerRight,
@@ -986,10 +990,10 @@ class _PlaceMapViewState extends State<_PlaceMapView> {
       pointer-events:none;
     }
     .cm {
-      background:rgba(0,0,0,0.5);
-      padding:2px 8px; border-radius:8px;
+      padding:3px 9px; border-radius:10px;
       font-size:11px; font-weight:600;
       color:#fff; white-space:nowrap;
+      box-shadow:0 1px 4px rgba(0,0,0,0.18);
     }
   </style>
 </head>
@@ -1025,6 +1029,7 @@ class _PlaceMapViewState extends State<_PlaceMapView> {
 
         var label = document.createElement('div');
         label.className = 'cm';
+        label.style.background = c.color;
         label.innerText = c.userName;
         new kakao.maps.CustomOverlay({
           map: map,

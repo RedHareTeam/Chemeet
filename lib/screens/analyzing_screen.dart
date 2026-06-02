@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../app_theme.dart';
 import '../services/analysis_service.dart';
 import '../widgets/app_dialog.dart';
 import 'room_home_screen.dart';
@@ -97,7 +98,7 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFFF9BDE), Color(0xFFFF7BAC), Color(0xFFB08EFF)],
+            colors: [AppTheme.intimacyTop, AppTheme.gradientEnd, Color(0xFFB08EFF)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -134,7 +135,7 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                             child: const Icon(
                               Icons.chat_bubble_outline_rounded,
                               size: 28,
-                              color: Color(0xFFFF9BDE),
+                              color: AppTheme.intimacyTop,
                             ),
                           ),
                         ),

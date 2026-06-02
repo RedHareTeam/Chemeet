@@ -100,7 +100,7 @@ class CircleService {
   Future<void> savePlaces(
       String roomId, List<Map<String, dynamic>> places) async {
     await _db.collection('rooms').doc(roomId).set(
-      {'places': places, 'status': 'voting'},
+      {'places': places, 'status': 'voting', 'updatedAt': FieldValue.serverTimestamp()},
       SetOptions(merge: true),
     );
   }

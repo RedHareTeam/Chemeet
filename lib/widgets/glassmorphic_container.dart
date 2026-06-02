@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 class GlassmorphicContainer extends StatelessWidget {
@@ -25,31 +26,30 @@ class GlassmorphicContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inner = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: baseColor.withValues(alpha: kIsWeb ? (backgroundAlpha + 0.1).clamp(0.0, 1.0) : backgroundAlpha),
+        borderRadius: borderRadius,
+        border: Border.all(color: baseColor.withValues(alpha: 0.6)),
+      ),
+      child: child,
+    );
+
     final glassy = ClipRRect(
       borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: baseColor.withValues(alpha: backgroundAlpha),
-            borderRadius: borderRadius,
-            border: Border.all(
-              color: baseColor.withValues(alpha: 0.6),
+      child: kIsWeb
+          ? inner
+          : BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
+              child: inner,
             ),
-          ),
-          child: child,
-        ),
-      ),
     );
 
     if (boxShadow.isEmpty) return glassy;
 
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: borderRadius,
-        boxShadow: boxShadow,
-      ),
+      decoration: BoxDecoration(borderRadius: borderRadius, boxShadow: boxShadow),
       child: glassy,
     );
   }

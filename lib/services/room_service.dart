@@ -24,6 +24,7 @@ class RoomService {
       'roomTitle': roomTitle,
       'maxMembers': maxMembers,
       'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
 
     await _db.collection('users').doc(myUserId).update({
@@ -87,10 +88,19 @@ class RoomService {
     return _db
         .collection('rooms')
         .where('members', arrayContains: userId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) =>
-        snap.docs.map((d) => {...d.data(), 'roomId': d.id}).toList());
+        .map((snap) {
+      final rooms = snap.docs.map((d) => {...d.data(), 'roomId': d.id}).toList();
+      rooms.sort((a, b) {
+        Timestamp? ta = (a['updatedAt'] ?? a['createdAt']) as Timestamp?;
+        Timestamp? tb = (b['updatedAt'] ?? b['createdAt']) as Timestamp?;
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        return tb.compareTo(ta);
+      });
+      return rooms;
+    });
   }
 
   // 단일 방 실시간 구독
@@ -149,6 +159,7 @@ class RoomService {
     final batch   = _db.batch();
     batch.update(roomRef, {
       'status':          'waiting',
+      'updatedAt':       FieldValue.serverTimestamp(),
       'places':          FieldValue.delete(),
       'confirmedPlace':  FieldValue.delete(),
       'appointmentDate': FieldValue.delete(),
@@ -184,6 +195,7 @@ class RoomService {
     await _db.collection('rooms').doc(roomId).update({
       'appointmentDate': Timestamp.fromDate(appointmentDate),
       'status': 'drawing',
+      'updatedAt': FieldValue.serverTimestamp(),
       'historySaved': FieldValue.delete(),
     });
   }
@@ -220,6 +232,7 @@ class RoomService {
         };
         if (needsSubReset) {
           update['status']          = 'waiting';
+          update['updatedAt']       = FieldValue.serverTimestamp();
           update['appointmentDate'] = FieldValue.delete();
           update['places']          = FieldValue.delete();
         }

@@ -129,7 +129,7 @@ class _PrimaryBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = action.destructive
         ? [AppTheme.error, const Color(0xFFFF7070)]
-        : [AppTheme.primary, const Color(0xFFFF7BAC)];
+        : [AppTheme.primary, AppTheme.gradientEnd];
 
     return Container(
       decoration: BoxDecoration(
@@ -170,26 +170,123 @@ class _PrimaryBtn extends StatelessWidget {
   }
 }
 
+class AppTextFieldDialog extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final TextEditingController controller;
+  final String hintText;
+  final int maxLength;
+  final String confirmLabel;
+
+  const AppTextFieldDialog({
+    super.key,
+    required this.title,
+    required this.controller,
+    required this.hintText,
+    this.icon = Icons.edit_outlined,
+    this.maxLength = 30,
+    this.confirmLabel = '저장',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 0,
+      backgroundColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, size: 20, color: AppTheme.primary),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: maxLength,
+              decoration: InputDecoration(
+                hintText: hintText,
+                counterText: '',
+                filled: true,
+                fillColor: AppTheme.bg,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                ),
+              ),
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(child: _SecondaryBtn(action: DialogAction(label: '취소', onTap: () => Navigator.pop(context)))),
+                const SizedBox(width: 8),
+                Expanded(child: _PrimaryBtn(action: DialogAction(label: confirmLabel, primary: true, onTap: () => Navigator.pop(context, controller.text)))),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SecondaryBtn extends StatelessWidget {
   final DialogAction action;
   const _SecondaryBtn({required this.action});
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: action.onTap,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppTheme.textMuted,
-        side: const BorderSide(color: AppTheme.border),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      child: Text(
-        action.label,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: AppTheme.textMuted,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Text(
+            action.label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textMuted,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
       ),
     );

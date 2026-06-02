@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:chemeet/app_theme.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chemeet/screens/heatmap_screen.dart';
 import 'package:chemeet/screens/place_screen.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import '../services/room_service.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/glass_popup_menu.dart';
 import '../widgets/glassmorphic_container.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'date_setting_screen.dart';
 import 'map_screen.dart';
 import 'upload_screen.dart';
@@ -134,6 +136,25 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     return days[(wd - 1) % 7];
   }
 
+  Future<void> _renameRoom() async {
+    final currentTitle = _roomData?['roomTitle'] ?? '';
+    final controller = TextEditingController(text: currentTitle);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (_) => AppTextFieldDialog(
+        title: '방 제목 수정',
+        controller: controller,
+        hintText: '방 제목을 입력하세요',
+        maxLength: 30,
+      ),
+    );
+    if (newTitle == null || newTitle.trim().isEmpty || newTitle.trim() == currentTitle) return;
+    await FirebaseFirestore.instance
+        .collection('rooms')
+        .doc(widget.roomId)
+        .update({'roomTitle': newTitle.trim()});
+  }
+
   Future<void> _confirmLeave() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -203,14 +224,18 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
         icon: Icons.map_outlined,
         colors: [AppTheme.drawing, const Color(0xFF7BB8FF)],
         enabled: true,
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => MapScreen(
-            roomId: widget.roomId,
-            myUserId: widget.myUserId,
-            myUserName: widget.myUserName,
-            members: members,
-          ),
-        )),
+        onTap: () async {
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (!context.mounted) return;
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => MapScreen(
+              roomId: widget.roomId,
+              myUserId: widget.myUserId,
+              myUserName: widget.myUserName,
+              members: members,
+            ),
+          ));
+        },
       );
     }
 
@@ -227,7 +252,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
     return _ActionParams(
       label: '약속 만들기',
       icon: Icons.add_circle_outline,
-      colors: [AppTheme.primary, const Color(0xFFFF7BAC)],
+      colors: [AppTheme.primary, AppTheme.gradientEnd],
       enabled: true,
       onTap: () => Navigator.push(context, MaterialPageRoute(
         builder: (_) => DateSettingScreen(
@@ -269,6 +294,9 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                   icon: const Icon(Icons.chevron_left_rounded,
                       size: 28, color: AppTheme.textDark),
                   onPressed: () => Navigator.pop(context),
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                  hoverColor: Colors.transparent,
                 ),
                 title: Text(
                   _roomData?['roomTitle'] ?? '',
@@ -369,7 +397,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                                       decoration: BoxDecoration(
                                         gradient: isMe
                                             ? const LinearGradient(
-                                                colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                                colors: [AppTheme.primary, AppTheme.gradientEnd],
                                               )
                                             : null,
                                         color: isMe ? null : AppTheme.bg,
@@ -541,7 +569,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                                 decoration: BoxDecoration(
                                   gradient: isNext
                                       ? const LinearGradient(
-                                          colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                          colors: [AppTheme.primary, AppTheme.gradientEnd],
                                           begin: Alignment.topLeft,
                                           end: Alignment.bottomRight,
                                         )
@@ -600,6 +628,30 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                                   ],
                                 ),
                               ),
+                              if ((place['url'] ?? place['kakaoUrl']) case final String url when url.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () => launchUrl(
+                                    Uri.parse(url),
+                                    mode: LaunchMode.inAppBrowserView,
+                                  ),
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: isNext
+                                          ? AppTheme.primary.withValues(alpha: 0.12)
+                                          : AppTheme.bg,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      Icons.map_outlined,
+                                      size: 18,
+                                      color: isNext ? AppTheme.primary : AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         );
@@ -633,7 +685,9 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                       GlassPopupMenu(
                         openUpward: true,
                         alignRight: false,
+                        menuLeft: 16,
                         onSelected: (v) {
+                          if (v == 'rename') _renameRoom();
                           if (v == 'report') {
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => UploadScreen(isReAnalyze: true, roomId: widget.roomId),
@@ -642,6 +696,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
                           if (v == 'leave') _confirmLeave();
                         },
                         items: const [
+                          GlassMenuItem(value: 'rename', icon: Icons.edit_outlined, label: '방 제목 수정'),
                           GlassMenuItem(value: 'report', icon: Icons.refresh_rounded, label: '리포트 업데이트'),
                           GlassMenuItem(value: 'leave', icon: Icons.logout_rounded, label: '방 나가기', destructive: true),
                         ],

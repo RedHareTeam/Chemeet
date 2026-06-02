@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'package:chemeet/app_theme.dart';
@@ -12,10 +13,10 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  final _authService        = AuthService();
-  final _emailController    = TextEditingController();
+  final _authService = AuthService();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _nameController     = TextEditingController();
+  final _nameController = TextEditingController();
 
   bool _isLogin = true;
   bool _loading = false;
@@ -29,10 +30,16 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  void _toggleMode() => setState(() { _isLogin = !_isLogin; _error = null; });
+  void _toggleMode() => setState(() {
+    _isLogin = !_isLogin;
+    _error = null;
+  });
 
   Future<void> _submit() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       if (_isLogin) {
         await _authService.signIn(
@@ -52,20 +59,32 @@ class _AuthScreenState extends State<AuthScreen> {
         (_) => false,
       );
     } catch (e) {
-      setState(() => _error = _friendlyError(e.toString()));
+      final code = e is FirebaseAuthException ? e.code : e.toString();
+      setState(() => _error = _friendlyError(code));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  String _friendlyError(String raw) {
-    if (raw.contains('user-not-found') || raw.contains('wrong-password') || raw.contains('invalid-credential')) {
-      return '이메일 또는 비밀번호가 올바르지 않아요';
+  String _friendlyError(String code) {
+    switch (code) {
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return '이메일 또는 비밀번호가 올바르지 않아요';
+      case 'email-already-in-use':
+        return '이미 사용 중인 이메일이에요';
+      case 'weak-password':
+        return '비밀번호는 6자 이상이어야 해요';
+      case 'invalid-email':
+        return '올바른 이메일 형식이 아니에요';
+      case 'network-request-failed':
+        return '네트워크 연결을 확인해주세요';
+      case 'too-many-requests':
+        return '잠시 후 다시 시도해주세요';
+      default:
+        return '오류가 발생했어요. 다시 시도해주세요';
     }
-    if (raw.contains('email-already-in-use')) return '이미 사용 중인 이메일이에요';
-    if (raw.contains('weak-password')) return '비밀번호는 6자 이상이어야 해요';
-    if (raw.contains('invalid-email')) return '올바른 이메일 형식이 아니에요';
-    return '오류가 발생했어요. 다시 시도해주세요';
   }
 
   @override
@@ -89,9 +108,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       flex: 2,
                       child: Container(
                         color: AppTheme.primary,
-                        child: const Center(
-                          child: ChemeetLogo(fontSize: 42),
-                        ),
+                        child: const Center(child: ChemeetLogo(fontSize: 42)),
                       ),
                     ),
 
@@ -121,17 +138,53 @@ class _AuthScreenState extends State<AuthScreen> {
                               color: AppTheme.bg,
                               borderRadius: BorderRadius.circular(22),
                             ),
-                            child: Row(
+                            child: Stack(
                               children: [
-                                _ToggleTab(
-                                  label: '로그인',
-                                  selected: _isLogin,
-                                  onTap: () { if (!_isLogin) _toggleMode(); },
+                                // 슬라이딩 흰색 인디케이터
+                                AnimatedAlign(
+                                  duration: const Duration(milliseconds: 200),
+                                  curve: Curves.easeInOut,
+                                  alignment: _isLogin
+                                      ? Alignment.centerLeft
+                                      : Alignment.centerRight,
+                                  child: FractionallySizedBox(
+                                    widthFactor: 0.5,
+                                    child: Container(
+                                      margin: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(18),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.07,
+                                            ),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                _ToggleTab(
-                                  label: '회원가입',
-                                  selected: !_isLogin,
-                                  onTap: () { if (_isLogin) _toggleMode(); },
+                                // 탭 라벨
+                                Row(
+                                  children: [
+                                    _ToggleTab(
+                                      label: '로그인',
+                                      selected: _isLogin,
+                                      onTap: () {
+                                        if (!_isLogin) _toggleMode();
+                                      },
+                                    ),
+                                    _ToggleTab(
+                                      label: '회원가입',
+                                      selected: !_isLogin,
+                                      onTap: () {
+                                        if (_isLogin) _toggleMode();
+                                      },
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -183,14 +236,19 @@ class _AuthScreenState extends State<AuthScreen> {
                                     padding: const EdgeInsets.only(top: 8),
                                     child: Row(
                                       children: [
-                                        const Icon(Icons.info_outline_rounded,
-                                            size: 13, color: AppTheme.error),
+                                        const Icon(
+                                          Icons.info_outline_rounded,
+                                          size: 13,
+                                          color: AppTheme.error,
+                                        ),
                                         const SizedBox(width: 5),
                                         Expanded(
                                           child: Text(
                                             _error!,
                                             style: const TextStyle(
-                                                fontSize: 12, color: AppTheme.error),
+                                              fontSize: 12,
+                                              color: AppTheme.error,
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -211,15 +269,19 @@ class _AuthScreenState extends State<AuthScreen> {
                                 foregroundColor: Colors.white,
                                 disabledBackgroundColor: AppTheme.disabled,
                                 elevation: 0,
+                                shadowColor: Colors.transparent,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                              ),
+                              ).copyWith(elevation: WidgetStateProperty.all(0)),
                               child: _loading
                                   ? const SizedBox(
-                                      width: 20, height: 20,
+                                      width: 20,
+                                      height: 20,
                                       child: CircularProgressIndicator(
-                                          color: Colors.white, strokeWidth: 2),
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
                                     )
                                   : Text(
                                       _isLogin ? '로그인' : '회원가입',
@@ -262,28 +324,19 @@ class _ToggleTab extends StatelessWidget {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: selected
-                ? [BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.07),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )]
-                : [],
-          ),
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          height: double.infinity,
           child: Center(
-            child: Text(
-              label,
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: selected ? AppTheme.primary : AppTheme.textMuted,
+                fontFamily: 'Pretendard',
               ),
+              child: Text(label),
             ),
           ),
         ),

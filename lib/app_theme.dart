@@ -25,8 +25,17 @@ class AppTheme {
   static const disabled = Color(0xFFB8B4CC);
   static const disabledBg = Color(0xFFF2F0FA);
 
-  // ── 에러·친밀도 하단 ─────────────────────────────────────────
+  // ── 에러·경고 ────────────────────────────────────────────────
   static const error = Color(0xFFFF4D67);
+  static const warning = Color(0xFFFFBB00);
+  static const warningDark = Color(0xFFCC9000);
+
+  // ── 그래디언트 끝 색상 ───────────────────────────────────────
+  static const gradientEnd = Color(0xFFFF7BAC);
+
+  // ── 카드 배경 그래디언트 ─────────────────────────────────────
+  static const cardGradientStart = Color(0xFFFFF0FA); // 연분홍
+  static const cardGradientEnd   = Color(0xFFF0EEFF); // 연보라
 
   // ── 친밀도 단계별 색상 ────────────────────────────────────────
   static const intimacyTop = Color(0xFFFF9BDE); // 핑크    — 매우 친밀 (80+)
@@ -137,6 +146,8 @@ class AppTheme {
           fontWeight: FontWeight.w700,
           letterSpacing: 0.1,
         ),
+      ).copyWith(
+        elevation: WidgetStateProperty.all(0),
       ),
     ),
 

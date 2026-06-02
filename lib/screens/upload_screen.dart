@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:chemeet/app_theme.dart';
@@ -26,7 +27,7 @@ class _UploadScreenState extends State<UploadScreen> {
   final _roomService     = RoomService();
   final _titleController = TextEditingController();
   int   _memberCount     = 2;
-  File? _pickedFile;
+  Uint8List? _pickedBytes;
   String? _fileName;
   bool  _loading         = false;
 
@@ -34,7 +35,7 @@ class _UploadScreenState extends State<UploadScreen> {
   String _myUserName = '';
 
   bool get _canSubmit {
-    if (_pickedFile == null) return false;
+    if (_pickedBytes == null) return false;
     if (!widget.isReAnalyze && _titleController.text.trim().isEmpty) return false;
     return true;
   }
@@ -55,11 +56,12 @@ class _UploadScreenState extends State<UploadScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['txt'],
+      withData: true,
     );
-    if (result != null && result.files.single.path != null) {
+    if (result != null && result.files.single.bytes != null) {
       setState(() {
-        _pickedFile = File(result.files.single.path!);
-        _fileName   = result.files.single.name;
+        _pickedBytes = result.files.single.bytes;
+        _fileName    = result.files.single.name;
       });
     }
   }
@@ -71,7 +73,7 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       return;
     }
-    if (_pickedFile == null) {
+    if (_pickedBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('카카오톡 대화 파일을 선택해주세요')),
       );
@@ -92,7 +94,7 @@ class _UploadScreenState extends State<UploadScreen> {
       );
     }
 
-    final txtContent = await _pickedFile!.readAsString();
+    final txtContent = utf8.decode(_pickedBytes!, allowMalformed: true);
     if (!mounted) return;
     setState(() => _loading = false);
 
@@ -135,6 +137,9 @@ class _UploadScreenState extends State<UploadScreen> {
             leading: IconButton(
               icon: const Icon(Icons.chevron_left_rounded, size: 28, color: AppTheme.textDark),
               onPressed: () => Navigator.pop(context),
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              hoverColor: Colors.transparent,
             ),
             title: Text(
               widget.isReAnalyze ? '리포트 업데이트' : '새 방 만들기',
@@ -220,7 +225,7 @@ class _UploadScreenState extends State<UploadScreen> {
                                 decoration: BoxDecoration(
                                   gradient: selected
                                       ? const LinearGradient(
-                                          colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                          colors: [AppTheme.primary, AppTheme.gradientEnd],
                                           begin: Alignment.topLeft,
                                           end: Alignment.bottomRight,
                                         )
@@ -289,23 +294,23 @@ class _UploadScreenState extends State<UploadScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 36),
                       decoration: BoxDecoration(
-                        gradient: _pickedFile != null
+                        gradient: _pickedBytes != null
                             ? LinearGradient(
                                 colors: [
                                   AppTheme.primary.withValues(alpha: 0.08),
-                                  const Color(0xFFFF7BAC).withValues(alpha: 0.06),
+                                  AppTheme.gradientEnd.withValues(alpha: 0.06),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               )
                             : null,
-                        color: _pickedFile != null ? null : AppTheme.surface,
+                        color: _pickedBytes != null ? null : AppTheme.surface,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: _pickedFile != null
+                          color: _pickedBytes != null
                               ? AppTheme.primary.withValues(alpha: 0.4)
                               : AppTheme.border,
-                          width: _pickedFile != null ? 1.5 : 1,
+                          width: _pickedBytes != null ? 1.5 : 1,
                         ),
                       ),
                       child: Column(
@@ -314,34 +319,34 @@ class _UploadScreenState extends State<UploadScreen> {
                             width: 56,
                             height: 56,
                             decoration: BoxDecoration(
-                              gradient: _pickedFile != null
+                              gradient: _pickedBytes != null
                                   ? const LinearGradient(
-                                      colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                                      colors: [AppTheme.primary, AppTheme.gradientEnd],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                     )
                                   : null,
-                              color: _pickedFile != null ? null : AppTheme.bg,
+                              color: _pickedBytes != null ? null : AppTheme.bg,
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              _pickedFile != null
+                              _pickedBytes != null
                                   ? Icons.check_rounded
                                   : Icons.upload_file_rounded,
                               size: 26,
-                              color: _pickedFile != null ? Colors.white : AppTheme.disabled,
+                              color: _pickedBytes != null ? Colors.white : AppTheme.disabled,
                             ),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            _pickedFile != null ? _fileName! : '탭하여 .txt 파일 선택',
+                            _pickedBytes != null ? _fileName! : '탭하여 .txt 파일 선택',
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: _pickedFile != null ? FontWeight.w600 : FontWeight.w400,
-                              color: _pickedFile != null ? AppTheme.primary : AppTheme.textMuted,
+                              fontWeight: _pickedBytes != null ? FontWeight.w600 : FontWeight.w400,
+                              color: _pickedBytes != null ? AppTheme.primary : AppTheme.textMuted,
                             ),
                           ),
-                          if (_pickedFile != null) ...[
+                          if (_pickedBytes != null) ...[
                             const SizedBox(height: 4),
                             const Text(
                               '다시 선택하려면 탭하세요',

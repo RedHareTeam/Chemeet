@@ -15,12 +15,6 @@
 
 ---
 
-## 남은 작업
-
-- 사용자 위치로 지도 로드
-
----
-
 ## 프로젝트 구조
 
 ```
@@ -73,7 +67,7 @@ Chemeet/
     │   └── place_service.dart      # 지도 기반 주변 장소 검색
     └── widgets/
         ├── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시, 핀치줌 오버레이 동기화
-        ├── app_dialog.dart         # 공통 다이얼로그
+        ├── app_dialog.dart         # 공통 다이얼로그 (AppDialog, AppTextFieldDialog)
         ├── glass_popup_menu.dart   # 글라스모피즘 팝업 메뉴
         ├── glassmorphic_container.dart # 반투명 블러 컨테이너
         ├── gradient_button.dart    # 그라데이션 버튼
@@ -174,6 +168,7 @@ rooms/{roomId}
 ├── inviteCode: string
 ├── maxMembers: number              # 3~5
 ├── status: string                  # waiting / drawing / voting / confirmed
+├── updatedAt: timestamp            # 최근 활동 시각 (목록 정렬 기준)
 ├── intimacyScore: number
 ├── keywords: [string, ...]
 ├── searchQuery: string
@@ -230,4 +225,19 @@ KAKAO_JS_KEY=
 KAKAO_REST_KEY=
 OPENWEATHER_API_KEY=
 ODSAY_API_KEY=
+BASE_URL=        # Flask 서버 URL (미설정 시 로컬 기본값 사용)
 ```
+
+---
+
+## 배포
+
+백엔드는 Railway에 배포되어 있음
+
+```bash
+cd backend
+railway link   # 기존 프로젝트 연결
+railway up     # 배포
+```
+
+환경 변수는 Railway 대시보드 → Variables에서 설정 가능

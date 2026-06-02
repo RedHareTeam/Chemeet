@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../services/room_service.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/glass_popup_menu.dart';
 import '../widgets/glassmorphic_container.dart';
 import 'package:chemeet/app_theme.dart';
@@ -115,14 +116,40 @@ class _RoomListScreenState extends State<RoomListScreen> {
     final controller = TextEditingController(text: _myUserName);
     final newName = await showDialog<String>(
       context: context,
-      builder: (_) => _NicknameDialog(controller: controller),
+      builder: (_) => AppTextFieldDialog(
+        title: '닉네임 변경',
+        controller: controller,
+        hintText: '새 닉네임을 입력하세요',
+        maxLength: 12,
+        confirmLabel: '변경',
+      ),
     );
     if (newName == null || newName.trim().isEmpty || newName.trim() == _myUserName) return;
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(_myUserId)
-        .update({'userName': newName.trim()});
-    if (mounted) setState(() => _myUserName = newName.trim());
+    final trimmed = newName.trim();
+    final db = FirebaseFirestore.instance;
+
+    // users 문서 업데이트
+    await db.collection('users').doc(_myUserId).update({'userName': trimmed});
+
+    // 내가 속한 모든 방의 memberNames + circles 업데이트
+    final roomsSnap = await db
+        .collection('rooms')
+        .where('members', arrayContains: _myUserId)
+        .get();
+
+    final batch = db.batch();
+    for (final roomDoc in roomsSnap.docs) {
+      batch.update(roomDoc.reference, {'memberNames.$_myUserId': trimmed});
+
+      final circleRef = roomDoc.reference.collection('circles').doc(_myUserId);
+      final circleSnap = await circleRef.get();
+      if (circleSnap.exists) {
+        batch.update(circleRef, {'userName': trimmed});
+      }
+    }
+    await batch.commit();
+
+    if (mounted) setState(() => _myUserName = trimmed);
   }
 
   List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> rooms) {
@@ -481,6 +508,7 @@ class _FloatingToolbar extends StatelessWidget {
               GlassPopupMenu(
                 openUpward: true,
                 alignRight: false,
+                menuLeft: 16,
                 onSelected: (v) {
                   if (v == 'nickname') onChangeNickname();
                   if (v == 'logout') onSignOut();
@@ -511,7 +539,7 @@ class _FloatingToolbar extends StatelessWidget {
                   height: 50,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                      colors: [AppTheme.primary, AppTheme.gradientEnd],
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                     ),
@@ -599,146 +627,6 @@ class _FloatingToolbar extends StatelessWidget {
               ),
             ],
           ),
-    );
-  }
-}
-
-// ════════════════════════════════════════════════════════════
-// 닉네임 변경 다이얼로그
-// ════════════════════════════════════════════════════════════
-
-class _NicknameDialog extends StatelessWidget {
-  final TextEditingController controller;
-  const _NicknameDialog({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      elevation: 0,
-      backgroundColor: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.edit_outlined,
-                    size: 20,
-                    color: AppTheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  '닉네임 변경',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textDark,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: 12,
-              decoration: InputDecoration(
-                hintText: '새 닉네임을 입력하세요',
-                counterText: '',
-                filled: true,
-                fillColor: AppTheme.bg,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppTheme.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
-                ),
-              ),
-              onSubmitted: (v) => Navigator.pop(context, v),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.textMuted,
-                      side: const BorderSide(color: AppTheme.border),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      '취소',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primary.withValues(alpha: 0.28),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => Navigator.pop(context, controller.text),
-                        borderRadius: BorderRadius.circular(14),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          child: Text(
-                            '변경',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -850,19 +738,29 @@ class _JoinDialogState extends State<_JoinDialog> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.textMuted,
-                      side: const BorderSide(color: AppTheme.border),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: () => Navigator.pop(context),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '취소',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    child: const Text(
-                      '취소',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                   ),
                 ),
@@ -871,7 +769,7 @@ class _JoinDialogState extends State<_JoinDialog> {
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [AppTheme.primary, Color(0xFFFF7BAC)],
+                        colors: [AppTheme.primary, AppTheme.gradientEnd],
                         begin: Alignment.centerLeft,
                         end: Alignment.centerRight,
                       ),
@@ -942,8 +840,12 @@ class _RoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final roomTitle = room['roomTitle'] as String? ?? '제목 없음';
+    final members = List<String>.from(room['members'] ?? []);
     final memberNames = Map<String, dynamic>.from(room['memberNames'] ?? {});
-    final names = memberNames.values.map((e) => e.toString()).toList();
+    final names = members
+        .map((uid) => memberNames[uid]?.toString() ?? '')
+        .where((n) => n.isNotEmpty)
+        .toList();
     final status = room['status'] as String? ?? 'idle';
     final isActive = status == 'drawing' || status == 'voting';
 

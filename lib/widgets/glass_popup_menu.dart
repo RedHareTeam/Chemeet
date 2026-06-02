@@ -25,6 +25,7 @@ class GlassPopupMenu extends StatefulWidget {
   final void Function(String) onSelected;
   final bool openUpward;
   final bool alignRight;
+  final double? menuLeft;
 
   const GlassPopupMenu({
     super.key,
@@ -33,6 +34,7 @@ class GlassPopupMenu extends StatefulWidget {
     required this.onSelected,
     this.openUpward = true,
     this.alignRight = false,
+    this.menuLeft,
   });
 
   @override
@@ -78,6 +80,7 @@ class _GlassPopupMenuState extends State<GlassPopupMenu>
         items: widget.items,
         openUpward: widget.openUpward,
         alignRight: widget.alignRight,
+        menuLeft: widget.menuLeft,
         anim: _anim,
         onSelected: (v) {
           _close();
@@ -118,6 +121,7 @@ class _MenuOverlay extends StatelessWidget {
   final List<GlassMenuItem> items;
   final bool openUpward;
   final bool alignRight;
+  final double? menuLeft;
   final Animation<double> anim;
   final void Function(String) onSelected;
   final VoidCallback onDismiss;
@@ -129,6 +133,7 @@ class _MenuOverlay extends StatelessWidget {
     required this.items,
     required this.openUpward,
     required this.alignRight,
+    this.menuLeft,
     required this.anim,
     required this.onSelected,
     required this.onDismiss,
@@ -137,16 +142,23 @@ class _MenuOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final menuH = items.length * _itemHeight + _vPad * 2;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final safeBottom = bottomInset + 106;
 
-    double left = alignRight
-        ? pos.dx + btnSize.width - _menuWidth
-        : pos.dx;
+    double left;
+    if (menuLeft != null) {
+      left = menuLeft!;
+    } else if (alignRight) {
+      left = pos.dx + btnSize.width - _menuWidth;
+    } else {
+      left = pos.dx;
+    }
     left = left.clamp(8.0, screenSize.width - _menuWidth - 8);
 
     double top = openUpward
         ? pos.dy - menuH - _gap
         : pos.dy + btnSize.height + _gap;
-    top = top.clamp(8.0, screenSize.height - menuH - 8);
+    top = top.clamp(8.0, screenSize.height - menuH - safeBottom);
 
     return Material(
       type: MaterialType.transparency,
