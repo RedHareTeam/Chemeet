@@ -276,6 +276,7 @@ class _MapScreenState extends State<MapScreen> {
       });
       _mapKey.currentState?.updateMyCircle(lat, lng, radius, widget.myUserName);
       _mapKey.currentState?.setCenter(lat, lng);
+      _showLocationDot();
     } else {
       if (mounted) setState(() => _circleChecked = true);
       _moveToCurrentLocation();
@@ -303,28 +304,48 @@ class _MapScreenState extends State<MapScreen> {
     _updateIntersectionState();
   }
 
-  Future<void> _moveToCurrentLocation() async {
+  Future<({double lat, double lng})?> _fetchGpsPosition() async {
     try {
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) return;
-
+          permission == LocationPermission.deniedForever) return null;
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.low,
           timeLimit: Duration(seconds: 5),
         ),
       );
-      if (!mounted) return;
-      // 한국 영역 밖(에뮬레이터 기본값 등)이면 이동하지 않음
       final inKorea = pos.latitude >= 33.0 && pos.latitude <= 38.9 &&
           pos.longitude >= 124.5 && pos.longitude <= 131.0;
-      if (!inKorea) return;
-      _mapKey.currentState?.setCenter(pos.latitude, pos.longitude, level: 5);
-    } catch (_) {}
+      if (!inKorea) return null;
+      return (lat: pos.latitude, lng: pos.longitude);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _moveToCurrentLocation({bool showFeedback = false}) async {
+    final pos = await _fetchGpsPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      if (showFeedback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('현재 위치를 가져올 수 없어요')),
+        );
+      }
+      return;
+    }
+    _mapKey.currentState?.setCenter(pos.lat, pos.lng, level: 5);
+    _mapKey.currentState?.showCurrentLocationDot(pos.lat, pos.lng);
+  }
+
+  Future<void> _showLocationDot() async {
+    final pos = await _fetchGpsPosition();
+    if (pos == null || !mounted) return;
+    _mapKey.currentState?.showCurrentLocationDot(pos.lat, pos.lng);
   }
 
   // ── 원 그리기 ─────────────────────────────────────────────
@@ -879,6 +900,24 @@ class _MapScreenState extends State<MapScreen> {
                           color: _isDrawMode
                               ? Colors.white
                               : AppTheme.textMuted,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // 내 위치 버튼
+                    GestureDetector(
+                      onTap: () => _moveToCurrentLocation(showFeedback: true),
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: AppTheme.bg,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.my_location_rounded,
+                          color: AppTheme.accent,
                           size: 22,
                         ),
                       ),

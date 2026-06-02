@@ -51,6 +51,10 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
     _ctrl?.runJavaScript('moveToCurrentLocation()');
   }
 
+  void showCurrentLocationDot(double lat, double lng) {
+    _ctrl?.runJavaScript('updateCurrentLocationDot($lat,$lng)');
+  }
+
   void addMessage(String userId, String userName, String message) {
     final encName = Uri.encodeComponent(userName);
     final encMsg  = Uri.encodeComponent(message);
@@ -101,6 +105,10 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
     .direction-pin:active { transform: translate(-50%, -50%) scale(0.82); transition-duration: 0.06s; transition-timing-function: ease-in; }
     .direction-pin .pin-name { font-size: 9px; margin-top: 1px; }
     .direction-pin .pin-msg { position: absolute; bottom: 54px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); color: white; padding: 4px 8px; border-radius: 8px; font-size: 11px; white-space: normal; max-width: 130px; word-break: keep-all; text-align: center; pointer-events: none; }
+    .curr-loc-wrap { position: relative; width: 20px; height: 20px; }
+    .curr-loc-dot { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border-radius: 50%; background: #4A8FD9; border: 2.5px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.4); z-index: 2; }
+    .curr-loc-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border-radius: 50%; background: rgba(74,143,217,0.35); animation: curr-pulse 2s ease-out infinite; }
+    @keyframes curr-pulse { 0% { transform: translate(-50%,-50%) scale(1); opacity: 1; } 100% { transform: translate(-50%,-50%) scale(3.2); opacity: 0; } }
   </style>
 </head>
 <body>
@@ -116,6 +124,7 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
     var overlayContainer = document.getElementById('overlay-container');
     var circles = { my: { lat:null,lng:null,radius:null,userName:'',color:'#9D8EFF',messages:[] }, partners:{} };
     var partnerCircleObjects = {};
+    var _currLocOverlay = null;
 
     kakao.maps.load(function() {
       Console.postMessage('kakao maps ready');
@@ -142,14 +151,15 @@ class KakaoMapWebViewState extends State<KakaoMapWebView> {
     function getCircleTopY(circleObj,lat,lng){if(circleObj){var nb=circleObj.getBounds().getNorthEast().getLat();return getScreenPos(nb,lng).y;}return getScreenPos(lat,lng).y-40;}
     function renderBubbles(cd,sp,topY){var wrap=document.createElement('div');wrap.className='bubble-wrap';wrap.style.left=sp.x+'px';wrap.style.top=(topY-4)+'px';var nt=document.createElement('div');nt.className='name-tag';nt.innerText=cd.userName;wrap.appendChild(nt);var msgs=cd.messages.slice(-4);msgs.forEach(function(msg,i){var op=msgs.length===1?1.0:0.25+(i/(msgs.length-1))*0.75;var b=document.createElement('div');b.className='bubble';b.style.background=hexToRgba(cd.color,0.85);b.style.opacity=op;b.innerText=msg;wrap.insertBefore(b,nt);});overlayContainer.appendChild(wrap);}
     function renderDirectionPin(cd,lat,lng){var edge=getEdgePosition(getScreenPos(lat,lng));var pin=document.createElement('div');pin.className='direction-pin';pin.style.background=cd.color;pin.style.left=edge.x+'px';pin.style.top=edge.y+'px';var init=document.createElement('span');init.innerText=cd.userName?cd.userName[0]:'?';pin.appendChild(init);var ne=document.createElement('div');ne.className='pin-name';ne.innerText=cd.userName;pin.appendChild(ne);if(cd.messages.length>0){var me=document.createElement('div');me.className='pin-msg';me.innerText=cd.messages[cd.messages.length-1];pin.appendChild(me);}pin.addEventListener('click',function(){map.panTo(new kakao.maps.LatLng(lat,lng));});overlayContainer.appendChild(pin);}
-    function getEdgePosition(sp){var W=window.innerWidth,H=window.innerHeight,cx=W/2,cy=H/2,dx=sp.x-cx,dy=sp.y-cy,angle=Math.atan2(dy,dx),m=44;var tx=cx+(W/2-m)*Math.cos(angle),ty=cy+(H/2-m)*Math.sin(angle);return{x:Math.max(m,Math.min(W-m,tx)),y:Math.max(m,Math.min(H-m,ty))};}
+    function getEdgePosition(sp){var W=window.innerWidth,H=window.innerHeight,cx=W/2,cy=H/2,dx=sp.x-cx,dy=sp.y-cy,ml=60,mr=60,mt=140,mb=175,rx=W-mr-cx,lx=ml-cx,topY=mt-cy,botY=H-mb-cy,sx=dx!==0?(dx>0?rx:lx)/dx:Infinity,sy=dy!==0?(dy>0?botY:topY)/dy:Infinity,s=Math.min(Math.abs(sx),Math.abs(sy));return{x:Math.max(ml,Math.min(W-mr,cx+dx*s)),y:Math.max(mt,Math.min(H-mb,cy+dy*s))};}
     function updateMyCircle(lat,lng,radius,userName){circles.my.lat=lat;circles.my.lng=lng;circles.my.radius=radius;circles.my.userName=userName;myCircle.setPosition(new kakao.maps.LatLng(lat,lng));myCircle.setRadius(radius);myCircle.setMap(map);updateAllOverlays();}
     function clearPartnerCircle(partnerId){if(partnerCircleObjects[partnerId]){partnerCircleObjects[partnerId].setMap(null);delete partnerCircleObjects[partnerId];}delete circles.partners[partnerId];updateAllOverlays();}
     function updatePartnerCircle(partnerId,lat,lng,radius,userName,color){if(!circles.partners[partnerId])circles.partners[partnerId]={lat:null,lng:null,radius:null,userName:'',color:color,messages:[]};var c=circles.partners[partnerId];c.lat=lat;c.lng=lng;c.radius=radius;c.userName=userName;c.color=color;if(partnerCircleObjects[partnerId]){partnerCircleObjects[partnerId].setPosition(new kakao.maps.LatLng(lat,lng));partnerCircleObjects[partnerId].setRadius(radius);}else{partnerCircleObjects[partnerId]=new kakao.maps.Circle({map:map,center:new kakao.maps.LatLng(lat,lng),radius:radius,strokeWeight:2,strokeColor:color,strokeOpacity:0.8,fillColor:color,fillOpacity:0.2});}updateAllOverlays();}
     function addMessage(userId,userName,message){var cd=null;if(circles.my.userName===userName){cd=circles.my;}else{var keys=Object.keys(circles.partners);for(var i=0;i<keys.length;i++){if(circles.partners[keys[i]].userName===userName){cd=circles.partners[keys[i]];break;}}if(!cd&&circles.partners[userId])cd=circles.partners[userId];}if(!cd)return;cd.messages.push(message);if(cd.messages.length>4)cd.messages.shift();updateAllOverlays();setTimeout(function(){cd.messages.shift();updateAllOverlays();},5000);}
     function setDrawMode(enabled){isDrawMode=enabled;canvas.className=enabled?'draw-mode':'';if(!enabled)ctx.clearRect(0,0,canvas.width,canvas.height);Console.postMessage('drawMode: '+enabled);}
     function setMapCenter(lat,lng,level){map.setCenter(new kakao.maps.LatLng(lat,lng));if(level)map.setLevel(level);}
-    function moveToCurrentLocation(){if(!navigator.geolocation)return;navigator.geolocation.getCurrentPosition(function(pos){map.setCenter(new kakao.maps.LatLng(pos.coords.latitude,pos.coords.longitude));map.setLevel(5);},function(){},{timeout:5000,maximumAge:60000});}
+    function updateCurrentLocationDot(lat,lng){var pos=new kakao.maps.LatLng(lat,lng);if(_currLocOverlay){_currLocOverlay.setPosition(pos);}else{_currLocOverlay=new kakao.maps.CustomOverlay({map:map,position:pos,content:'<div class="curr-loc-wrap"><div class="curr-loc-ring"></div><div class="curr-loc-dot"></div></div>',zIndex:5,yAnchor:0.5,xAnchor:0.5});}}
+    function moveToCurrentLocation(){if(!navigator.geolocation)return;navigator.geolocation.getCurrentPosition(function(pos){map.setCenter(new kakao.maps.LatLng(pos.coords.latitude,pos.coords.longitude));map.setLevel(5);updateCurrentLocationDot(pos.coords.latitude,pos.coords.longitude);},function(){},{timeout:5000,maximumAge:60000});}
   </script>
 </body>
 </html>
