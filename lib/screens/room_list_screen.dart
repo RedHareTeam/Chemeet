@@ -178,6 +178,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
 

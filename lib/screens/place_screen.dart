@@ -516,6 +516,7 @@ class _PlaceScreenState extends State<PlaceScreen>
           Expanded(
             child: TabBarView(
               controller: _tabController,
+              physics: const NeverScrollableScrollPhysics(),
               children: [
                 // 목록 탭
                 ListView.builder(

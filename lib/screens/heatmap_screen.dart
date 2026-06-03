@@ -859,13 +859,13 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryBg,
+                            color: color.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.map_outlined,
                             size: 18,
-                            color: AppTheme.primary,
+                            color: color,
                           ),
                         ),
                       ),
