@@ -718,7 +718,7 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
   StreamSubscription?           _sub;
   String?                       _activeHistoryId;
   final _reviewCtrl           = TextEditingController();
-  bool _submitting            = false;
+  bool   _submitting          = false;
   final _sheetCtrl            = DraggableScrollableController();
   double _sizeBeforeExpand    = 0.65;
   bool   _sheetExpanded       = false;
@@ -763,33 +763,15 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
     super.dispose();
   }
 
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final kh = MediaQuery.viewInsetsOf(context).bottom;
-    if (kh == _prevKeyboardHeight) return;
-    _prevKeyboardHeight = kh;
-
-    if (kh > 0 && _activeHistoryId != null && _sheetCtrl.isAttached && !_sheetExpanded) {
-      _sizeBeforeExpand = _sheetCtrl.size;
-      _sheetExpanded = true;
-      _sheetCtrl.animateTo(_maxSize,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut);
-    } else if (kh == 0 && _sheetExpanded && _sheetCtrl.isAttached) {
+  void _closeInput() {
+    setState(() => _activeHistoryId = null);
+    FocusScope.of(context).unfocus();
+    if (_sheetCtrl.isAttached && _sheetExpanded) {
       _sheetExpanded = false;
       _sheetCtrl.animateTo(_sizeBeforeExpand,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut);
     }
-  }
-
-  void _closeInput() {
-    setState(() { _activeHistoryId = null; });
-    FocusScope.of(context).unfocus();
-    // 키보드로 인해 자동 확장된 경우만 복원 (didChangeDependencies에서 처리)
-    // 직접 드래그로 올린 경우는 그대로 유지
   }
 
   Future<void> _submitRecord() async {
@@ -810,6 +792,27 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
       }
     } catch (_) {
       if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final kh = MediaQuery.viewInsetsOf(context).bottom;
+    if (kh == _prevKeyboardHeight) return;
+    _prevKeyboardHeight = kh;
+
+    if (kh > 0 && _activeHistoryId != null && _sheetCtrl.isAttached && !_sheetExpanded) {
+      _sizeBeforeExpand = _sheetCtrl.size;
+      _sheetExpanded = true;
+      _sheetCtrl.animateTo(_maxSize,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
+    } else if (kh == 0 && _sheetExpanded && _sheetCtrl.isAttached) {
+      _sheetExpanded = false;
+      _sheetCtrl.animateTo(_sizeBeforeExpand,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
     }
   }
 
@@ -962,6 +965,7 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                     myUserId:       widget.myUserId,
                     myUserName:     widget.myUserName,
                     historyService: widget.historyService,
+                    isActive:       _activeHistoryId == historyId,
                     onRecordTap:    () => setState(() {
                       _activeHistoryId = historyId;
                       _reviewCtrl.clear();
@@ -971,7 +975,7 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
               ),
             ),
 
-            // 인스타식 고정 입력바
+            // 고정 입력바 (키보드 위)
             if (_activeHistoryId != null)
               Container(
                 decoration: const BoxDecoration(
@@ -981,12 +985,13 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                 padding: EdgeInsets.fromLTRB(
                     12, 8, 12, 8 + MediaQuery.viewInsetsOf(ctx).bottom),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
                       child: TextField(
                         controller: _reviewCtrl,
                         autofocus: true,
-                        maxLines: 3,
+                        maxLines: 4,
                         minLines: 1,
                         onChanged: (_) => setState(() {}),
                         style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
@@ -999,11 +1004,11 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 10),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
+                            borderRadius: BorderRadius.circular(20),
                             borderSide: const BorderSide(color: AppTheme.border),
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
+                            borderRadius: BorderRadius.circular(20),
                             borderSide: const BorderSide(
                                 color: AppTheme.primary, width: 1.5),
                           ),
@@ -1017,11 +1022,10 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: _reviewCtrl.text.trim().isNotEmpty
-                          ? _submitRecord
-                          : null,
+                      onTap: _reviewCtrl.text.trim().isNotEmpty ? _submitRecord : null,
                       child: Container(
                         width: 40, height: 40,
+                        margin: const EdgeInsets.only(bottom: 2),
                         decoration: BoxDecoration(
                           color: _reviewCtrl.text.trim().isNotEmpty
                               ? AppTheme.primary
@@ -1056,6 +1060,7 @@ class _VisitCard extends StatefulWidget {
   final String         myUserName;
   final HistoryService historyService;
   final VoidCallback   onRecordTap;
+  final bool           isActive;
 
   const _VisitCard({
     required this.roomId,
@@ -1065,6 +1070,7 @@ class _VisitCard extends StatefulWidget {
     required this.myUserName,
     required this.historyService,
     required this.onRecordTap,
+    required this.isActive,
   });
 
   @override
@@ -1201,31 +1207,34 @@ class _VisitCardState extends State<_VisitCard> {
                                   widget.historyId,
                                   r['recordId'] as String),
                         )),
-                    // 기록 추가 버튼
                     GestureDetector(
-                      onTap: widget.onRecordTap,
+                      onTap: widget.isActive ? null : widget.onRecordTap,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 14),
                         decoration: BoxDecoration(
-                          color: AppTheme.primary.withValues(alpha: 0.04),
+                          color: widget.isActive
+                              ? AppTheme.primary.withValues(alpha: 0.08)
+                              : AppTheme.primary.withValues(alpha: 0.04),
                           borderRadius: const BorderRadius.vertical(
                               bottom: Radius.circular(20)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add_circle_outline,
-                                size: 15, color: AppTheme.primary),
+                            Icon(
+                              widget.isActive
+                                  ? Icons.edit_rounded
+                                  : Icons.add_circle_outline,
+                              size: 15, color: AppTheme.primary),
                             const SizedBox(width: 6),
-                            const Text(
-                              '기록 남기기',
-                              style: TextStyle(
+                            Text(
+                              widget.isActive ? '입력 중...' : '기록 남기기',
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: AppTheme.primary,
-                              ),
-                            ),
+                              )),
                           ],
                         ),
                       ),
