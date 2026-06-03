@@ -1,10 +1,5 @@
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=FF6B9D,FF8E53&height=150&section=header" width="100%" />
-</p>
-
-<h1 align="center">Chemeet</h1>
-<p align="center">
-  <i>카카오톡 대화를 분석해 취향을 파악하고, 지도 위 선호 지역의 교집합 안에서 모두가 만족하는 모임 장소를 추천하는 앱</i>
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=FF6B9D,FF8E53&height=200&text=Chemeet&textColor=ffffff&fontSize=60&desc=카카오톡%20대화%20분석%20기반%20모임%20장소%20추천%20앱&descSize=18&descAlignY=75&section=header" width="100%" />
 </p>
 
 <p align="center">
@@ -68,7 +63,7 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 ## 📱 앱 화면
 
 <p align="center">
-  <img width="700" alt="앱 화면" src="https://github.com/user-attachments/assets/b9134f3b-445b-409c-94dc-eef855bd9b62" />
+  <img width="500" alt="앱 화면" src="https://github.com/user-attachments/assets/5611f9dc-db36-4a1e-aa49-1c05f97a8dcb" />
 </p>
 
 ---
