@@ -12,7 +12,20 @@ PLACE_TYPE_MAP = {
     "카페": "카페",
     "바": "바",
     "이자카야": "이자카야",
-    "스터디": "스터디카페"
+    "스터디": "스터디카페",
+    "햄버거": "햄버거",
+    "초밥": "초밥",
+    "스시": "초밥",
+    "중식": "중식당",
+    "고기": "고깃집",
+    "삼겹살": "고깃집",
+    "스테이크": "스테이크",
+    "양식": "양식당",
+    "베트남": "베트남음식",
+    "쌀국수": "베트남음식",
+    "국밥": "국밥",
+    "회": "횟집",
+    "브런치": "브런치카페",
 }
 
 # avoided_food → place_type 매핑 
@@ -21,21 +34,37 @@ FOOD_PLACE_MAP = {
     "파스타": "파스타집",
     "피자": "피자집",
     "고기": "고깃집",
+    "삼겹살": "고깃집",
+    "소고기": "고깃집",
     "한식": "한식당",
+    "한정식": "한정식",
+    "햄버거": "햄버거",
+    "타코": "타코",
+    "초밥": "초밥",
+    "스시": "초밥",
+    "중식": "중식당",
+    "짜장면": "중식당",
+    "짬뽕": "중식당",
+    "국밥": "국밥",
+    "순대": "순대국",
+    "곱창": "곱창",
+    "회": "횟집",
+    "해산물": "해산물",
+    "스테이크": "스테이크",
+    "양식": "양식당",
+    "인도": "인도음식",
+    "커리": "인도음식",
+    "태국": "태국음식",
+    "베트남": "베트남음식",
+    "쌀국수": "베트남음식",
+    "브런치": "브런치카페",
+    "멕시칸": "멕시칸",
+    "샐러드": "샐러드",
 }
 
-PURPOSE_MOOD_MAP = {
-    ("친목", "한식당"): "감성",
-    ("친목", "카페"): "감성",
-    ("친목", "파스타집"): "분위기 좋은",
-    ("친목", "라멘집"): "감성",
-    ("친목", "피자집"): "감성",
-    ("술자리", "술집"): "편안한",
-    ("술자리", "이자카야"): "편안한",
-    ("업무미팅", "카페"): "조용한",
-    ("데이트", "파스타집"): "분위기 좋은",
-    ("데이트", "레스토랑"): "분위기 좋은",
-}
+# preferred_food 키워드 → secondary_place_type 매핑
+DESSERT_KEYWORDS = ["디저트", "케이크", "마카롱", "타르트", "와플"]
+BAKERY_KEYWORDS  = ["빵", "베이커리", "크루아상", "스콘"]
 
 MOOD_NORMALIZE = {
     "감성": "감성",
@@ -49,6 +78,8 @@ MOOD_NORMALIZE = {
     "작업": "작업",
     "노트북": "작업",
     "노트북 가능한": "작업",
+    "노트북 사용": "작업",
+    "작업할 수 있는": "작업",
     "콘센트": "작업",
     "편안한": "편안한",
     "편한": "편안한",
@@ -70,28 +101,14 @@ def has_strong_signal(conversation, keywords, threshold=2):
     return sum(conversation.count(k) for k in keywords) >= threshold
 
 
-def make_search_query(purpose, main_place, conversation, mood):
-
-    # 1순위: 노트북/업무 신호
-    if any(word in conversation for word in ["노트북", "작업", "콘센트", "와이파이", "미팅 가능"]):
-        return "노트북 카페"
-
-    # 2순위: 술자리
-    if purpose == "술자리":
-        return "술집 맛집"
-
-    # 3순위: 음식 중심 신호 (2번 이상 언급)
-    if has_strong_signal(conversation, ["든든", "국물", "고기 먹고"]):
-        return f"{main_place} 맛집"
-
-    # 4순위: 감성/분위기 신호 (2번 이상 언급)
-    if has_strong_signal(conversation, ["감성", "분위기", "오랜만"]) or \
-       any(m in ["감성", "감성 있는", "분위기 있는"] for m in mood):
-        return f"감성 {main_place}"
-
-    # 5순위: purpose 기반 기본값
-    auto_mood = PURPOSE_MOOD_MAP.get((purpose, main_place), "")
-    return f"{auto_mood} {main_place}".strip() if auto_mood else main_place
+def detect_secondary_cafe_type(preferred_food):
+    """preferred_food 기반으로 2차 카페 타입 결정"""
+    for food in preferred_food:
+        if any(k in food for k in DESSERT_KEYWORDS):
+            return "디저트카페"
+        if any(k in food for k in BAKERY_KEYWORDS):
+            return "베이커리카페"
+    return None
 
 
 def analyze_with_openai(messages):
@@ -116,7 +133,7 @@ def analyze_with_openai(messages):
 
 {sender_info}
 
-[예시]
+[예시1]
 대화:
 [A] 저번에 삼겹살 먹었으니까 이번엔 다른 거 먹자
 [A] 파스타 먹고 감성 있는 카페 가자
@@ -129,6 +146,34 @@ def analyze_with_openai(messages):
   "place_type": ["파스타집"],
   "secondary_place_type": ["카페"],
   "mood": ["감성", "조용한"]
+}}
+
+[예시2]
+대화:
+[A] 조용한 카페 어떠세요
+[B] 좋아요 노트북 사용 가능한 카페 찾았어요
+
+올바른 분석:
+{{
+  "preferred_food": [],
+  "avoided_food": [],
+  "place_type": ["카페"],
+  "secondary_place_type": [],
+  "mood": ["조용한", "작업"]
+}}
+
+[예시3]
+대화:
+[A] 라멘 먹고 디저트 카페 가자
+[B] 오 좋아 케이크 땡긴다
+
+올바른 분석:
+{{
+  "preferred_food": ["케이크", "디저트"],
+  "avoided_food": [],
+  "place_type": ["라멘집"],
+  "secondary_place_type": ["카페"],
+  "mood": []
 }}
 
 이제 아래 실제 대화를 분석해주세요:
@@ -150,6 +195,7 @@ secondary_place_type 규칙:
 mood 규칙:
 - 반드시 대화 전체를 읽고 장소 관련 표현 찾기
 - "감성 있는", "감성 카페", "조용한 데", "분위기 좋은" → 추출
+- "노트북 가능한", "노트북 사용", "작업할 수 있는" → "작업" 으로 추출
 - 대화에 mood 표현이 있는데 빈 배열로 내면 오답
 - 없으면 빈 배열
 
@@ -218,7 +264,6 @@ JSON으로만 응답:
 
         # 2. place_type 최대 1개
         if parsed["preferred_food"]:
-            # 최근 언급 음식 우선
             top_food = parsed["preferred_food"][-1]
             if top_food in FOOD_PLACE_MAP:
                 parsed["place_type"] = [FOOD_PLACE_MAP[top_food]]
@@ -242,12 +287,24 @@ JSON으로만 응답:
             MOOD_NORMALIZE.get(m, m) for m in parsed.get("mood", [])
         ))
 
-        # 5. search_query 생성
-        main_place = parsed["place_type"][0] if parsed["place_type"] else "맛집"
-        parsed["search_query"] = make_search_query(
-            purpose, main_place, conversation, parsed.get("mood", [])
-        )
-        parsed["search_query"] = parsed["search_query"].replace(',', '').strip()
+        # 5. preferred_food 기반 secondary_place_type 보정
+        secondary = parsed.get("secondary_place_type", [])
+        if secondary and secondary[0] == "카페":
+            cafe_type = detect_secondary_cafe_type(parsed["preferred_food"])
+            if cafe_type:
+                parsed["secondary_place_type"] = [cafe_type]
+
+        # secondary_place_type 없어도 대화 원문에서 디저트/베이커리 키워드 직접 감지
+        if not parsed.get("secondary_place_type") or parsed["secondary_place_type"] == ["카페"]:
+            for keyword in DESSERT_KEYWORDS:
+                if keyword in conversation:
+                    parsed["secondary_place_type"] = ["디저트카페"]
+                    break
+            else:
+                for keyword in BAKERY_KEYWORDS:
+                    if keyword in conversation:
+                        parsed["secondary_place_type"] = ["베이커리카페"]
+                        break
 
         parsed['purpose'] = purpose
         parsed['senders'] = senders
@@ -261,6 +318,5 @@ JSON으로만 응답:
             "place_type": [],
             "secondary_place_type": [],
             "mood": [],
-            "search_query": "맛집",
             "senders": senders
         }

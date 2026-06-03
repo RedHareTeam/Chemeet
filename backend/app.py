@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from kakao.kakao_parser import parse_kakao_txt
 from nlp.openai_analyzer import analyze_with_openai
 from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
@@ -7,12 +6,11 @@ import os
 import tempfile
 from recommend.intersection import calculate_intersection, get_intersection_shape, is_within_intersection
 from recommend.place import search_places
-from recommend.query_builder import clean_search_query, get_primary_queries, filter_by_category
+from recommend.query_builder import build_search_queries, filter_by_category, search_with_multi_query
 from recommend.weather import get_weather, get_weather_forecast
 from recommend.midpoint import find_best_midpoint
 
 app = Flask(__name__)
-CORS(app)
 
 @app.route('/')
 def index():
@@ -63,13 +61,57 @@ def analyze():
             "place_type": keywords['place_type'],
             "secondary_place_type": keywords['secondary_place_type'],
             "mood": keywords['mood'],
-            "search_query": keywords['search_query'],
             "keywords": keywords['mood'] + keywords['place_type'],
         })
 
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def _search_and_filter(place_type, mood, preferred_food, center_lat, center_lng, search_radius, users, radius_expansion, station_lat, station_lng, purpose=None):
+    """장소 검색 + 필터링 + 정렬 공통 로직"""
+    queries = build_search_queries(place_type, mood, preferred_food, purpose)
+
+    results = search_with_multi_query(
+        search_places, queries,
+        center_lat, center_lng,
+        radius=search_radius,
+        size_per_query=10
+    )
+
+    # 중복 제거 (kakaoId 기반, 이미 search_with_multi_query에서 처리되나 name 기반 2차 보정)
+    seen = set()
+    unique_places = []
+    for p in results:
+        if p['name'] not in seen:
+            seen.add(p['name'])
+            unique_places.append(p)
+
+    # 카테고리 필터링
+    filtered = filter_by_category(unique_places, place_type)
+    top_places = filtered[:20]
+
+    # 교집합 외부 장소 제거
+    try:
+        shape = get_intersection_shape(users, radius_expansion)
+        if shape:
+            in_intersection = [p for p in top_places if is_within_intersection(p['lat'], p['lng'], shape)]
+            if in_intersection:
+                top_places = in_intersection
+    except Exception as e:
+        print(f"교집합 필터 오류: {e}")
+
+    # 지하철역 근접도 기반 순위 재조정
+    if station_lat is not None:
+        def dist_to_station(p):
+            dlat = (p['lat'] - station_lat) * 111000
+            dlng = (p['lng'] - station_lng) * 111000 * 0.82
+            return dlat ** 2 + dlng ** 2
+        top_places.sort(key=dist_to_station)
+
+    print(f"장소 수: {len(top_places)}, queries: {queries}, place_type: {place_type}")
+    return top_places
 
 
 @app.route('/recommend', methods=['POST'])
@@ -80,9 +122,10 @@ def recommend():
         return jsonify({"error": "데이터가 없습니다"}), 400
 
     users = data.get('users')
-    search_query = data.get('search_query', '맛집')
     mood = data.get('mood', [])
     intimacy_score = data.get('intimacy_score', 50)
+    preferred_food = data.get('preferred_food', [])
+    purpose = data.get('purpose', '친목')
 
     if not users or len(users) < 2:
         return jsonify({"error": "users 좌표가 2명 이상 필요합니다"}), 400
@@ -126,52 +169,39 @@ def recommend():
             center_lng = nearest['lng']
             area_name  = nearest['name']
 
-    # 장소 검색
-    base_query      = clean_search_query(search_query)
-    primary_queries = get_primary_queries(mood, base_query)
+    # place_type 처리
+    place_type = data.get('place_type', '')
+    if isinstance(place_type, list):
+        place_type = place_type[0] if place_type else ''
 
-    all_places = []
-    for q in primary_queries:
-        results = search_places(q, center_lat, center_lng, radius=search_radius, size=10)
-        all_places.extend(results)
+    # secondary_place_type 처리
+    secondary_place_type = data.get('secondary_place_type', '')
+    if isinstance(secondary_place_type, list):
+        secondary_place_type = secondary_place_type[0] if secondary_place_type else ''
 
-    # 중복 제거
-    seen = set()
-    unique_places = []
-    for p in all_places:
-        if p['name'] not in seen:
-            seen.add(p['name'])
-            unique_places.append(p)
-
-    # 카테고리 필터링
-    filtered   = filter_by_category(unique_places, base_query)
-    top_places = filtered[:20]
-
-    # 교집합 외부 장소 제거
-    try:
-        shape = get_intersection_shape(users, radius_expansion)
-        if shape:
-            in_intersection = [p for p in top_places if is_within_intersection(p['lat'], p['lng'], shape)]
-            if in_intersection:
-                top_places = in_intersection
-    except Exception as e:
-        print(f"교집합 필터 오류: {e}")
-
-    # 지하철역 근접도 기반 순위 재조정
-    if station_lat is not None:
-        def dist_to_station(p):
-            dlat = (p['lat'] - station_lat) * 111000
-            dlng = (p['lng'] - station_lng) * 111000 * 0.82
-            return dlat ** 2 + dlng ** 2
-        top_places.sort(key=dist_to_station)
-
-    print(f"장소 수: {len(top_places)}")
-    print(f"search_query: {search_query}, mood: {mood}")
+    # 1차 장소 검색
+    top_places = _search_and_filter(
+        place_type, mood, preferred_food,
+        center_lat, center_lng,
+        search_radius, users, radius_expansion, station_lat, station_lng,
+        purpose=purpose
+    )
 
     if len(top_places) < 2:
         return jsonify({"error": "추천 장소가 2곳 미만입니다. 원을 더 넓게 그려주세요."}), 422
 
-    return jsonify({
+    # 2차 장소 검색 (secondary_place_type 있을 때만)
+    secondary_places = []
+    if secondary_place_type:
+        # 2차 장소는 preferred_food에서 디저트/베이커리 키워드만 활용
+        dessert_foods = [f for f in preferred_food if any(k in f for k in ["디저트", "케이크", "마카롱", "타르트", "와플", "빵", "크루아상", "스콘"])]
+        secondary_places = _search_and_filter(
+            secondary_place_type, mood, dessert_foods,
+            center_lat, center_lng,
+            search_radius, users, radius_expansion, station_lat, station_lng
+        )
+
+    response = {
         "has_intersection": intersection["has_intersection"],
         "area_name": area_name,
         "center_lat": center_lat,
@@ -181,7 +211,12 @@ def recommend():
         "users_transit": midpoint["users"] if midpoint else None,
         "total_time": midpoint["total_time"] if midpoint else None,
         "places": top_places
-    })
+    }
+
+    if secondary_places:
+        response["secondary_places"] = secondary_places
+
+    return jsonify(response)
 
 
 @app.route('/weather/forecast', methods=['GET'])
