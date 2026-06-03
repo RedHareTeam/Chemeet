@@ -1,243 +1,116 @@
-# Chemeet
-
-카카오톡 대화 분석 기반 모임 장소 추천 앱
-
----
-
-## 주요 기능
-
-- **대화 분석** — 카카오톡 txt 파일 업로드 → GPT-4o-mini로 취향 키워드·친밀도 점수 추출
-- **중간지점 추천** — 두 사용자가 지도에서 원을 그리면 교집합 구역 계산, ODsay 대중교통 시간 기반 최적 역 선택
-- **장소 투표** — 추천 장소 목록에서 실시간 투표 후 최종 장소 확정
-- **친밀도 리포트** — 점수(0~100) · 라벨 · 취향 키워드를 방 홈에서 확인
-- **방문 히스토리 지도** — 확정된 약속 장소들을 지도 위 히트맵으로 시각화
-- **다가오는 약속** — 확정된 약속 날짜·장소를 방 홈에서 목록으로 표시
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=FF6B9D,FF8E53&height=200&text=🗺️%20Chemeet%20-%20대화%20분석%20기반%20모임%20장소%20추천&textColor=ffffff&fontSize=35&animation=twinkling&section=header" width="100%" />
+</p>
+<p align="center"><i>Chemeet : 카카오톡 대화를 분석해 취향과 중간지점을 함께 고려한 모임 장소 추천 앱</i></p>
 
 ---
 
-## 프로젝트 구조
+## 🎬 시연 영상
 
-```
-Chemeet/
-├── backend/
-│   ├── app.py                      # Flask 서버, /analyze /recommend 엔드포인트
-│   ├── kakao/
-│   │   ├── __init__.py
-│   │   └── kakao_parser.py         # 카카오톡 txt 파일 파싱
-│   ├── nlp/
-│   │   ├── __init__.py
-│   │   ├── openai_analyzer.py      # GPT-4o-mini 취향 키워드 추출
-│   │   └── rule_based.py           # 친밀도 점수 계산 (반말 비율, 메시지 수 등)
-│   ├── recommend/
-│   │   ├── __init__.py
-│   │   ├── intersection.py         # 두 사용자 이동 가능 구역 교집합 계산 (Shapely)
-│   │   ├── midpoint.py             # 대중교통 시간 기반 최적 중간지점 역 선택
-│   │   ├── place.py                # 카카오맵 로컬 API 장소 검색
-│   │   ├── query_builder.py        # 검색 쿼리 생성 및 카테고리 필터링
-│   │   ├── transit.py              # ODsay API 대중교통 이동시간 계산
-│   │   └── weather.py              # OpenWeatherMap 날씨 정보
-│   └── tests/
-│       ├── samples/                # 테스트용 카카오톡 대화 파일 (친구/지인/직장)
-│       ├── test_parser.py          # 파싱 / 취향분석 / 친밀도 / 교집합 단위 테스트
-│       └── test_recommend.py       # /recommend 엔드포인트 통합 테스트
-│
-└── lib/
-    ├── main.dart                   # 앱 시작점, Firebase/.env 초기화, 첫 화면 분기
-    ├── firebase_options.dart       # Firebase 플랫폼별 설정
-    ├── app_theme.dart              # 공통 색상/텍스트/컴포넌트 테마 정의
-    ├── constants.dart              # 백엔드 baseUrl (iOS/Android 분기)
-    ├── screens/
-    │   ├── splash_screen.dart      # 스플래시 (Chemeet 로고 애니메이션, 로그인 분기)
-    │   ├── auth_screen.dart        # 로그인/회원가입
-    │   ├── room_list_screen.dart   # 내 방 목록 조회, 방 생성/입장
-    │   ├── room_home_screen.dart   # 방 홈 — 친밀도 리포트, 약속 현황, 메뉴
-    │   ├── upload_screen.dart      # 대화 txt 업로드 및 분석 요청
-    │   ├── analyzing_screen.dart   # 분석 진행 화면 (코멧 스피너 애니메이션)
-    │   ├── date_setting_screen.dart# 약속 날짜/시간 설정
-    │   ├── map_screen.dart         # 카카오맵 원 그리기 및 장소 추천 요청
-    │   ├── place_screen.dart       # 후보 장소 투표 및 최종 장소 확정
-    │   └── heatmap_screen.dart     # 방문 히스토리 지도 (히트맵)
-    ├── services/
-    │   ├── auth_service.dart       # Firebase Auth 및 사용자 정보 처리
-    │   ├── room_service.dart       # 방 생성/입장/조회/히스토리 저장
-    │   ├── analysis_service.dart   # Flask /analyze 호출, 결과 Firestore 저장
-    │   ├── circle_service.dart     # 원 좌표 저장, 장소 저장, 상태 변경
-    │   ├── vote_service.dart       # 장소 투표 처리
-    │   ├── history_service.dart    # 방문 히스토리 조회 및 실시간 구독
-    │   └── place_service.dart      # 지도 기반 주변 장소 검색
-    └── widgets/
-        ├── kakao_map_webview.dart  # 카카오맵 웹뷰, 원 그리기/표시, 핀치줌 오버레이 동기화
-        ├── app_dialog.dart         # 공통 다이얼로그 (AppDialog, AppTextFieldDialog)
-        ├── glass_popup_menu.dart   # 글라스모피즘 팝업 메뉴
-        ├── glassmorphic_container.dart # 반투명 블러 컨테이너
-        ├── gradient_button.dart    # 그라데이션 버튼
-        └── platform_html_view.dart # iOS/Android/Web 분기 WebView
-```
+<div align="center">
+  <a href="https://youtu.be/QrrKvhJ12bc" target="_blank">
+    <img src="https://img.youtube.com/vi/QrrKvhJ12bc/0.jpg" width="600px" />
+  </a>
+</div>
+
+#### 👉 [시연영상 보러가기](https://youtu.be/QrrKvhJ12bc)
 
 ---
 
-## API 명세
+## ❤️ 프로젝트 개요
 
-### POST /analyze
-카카오톡 대화 파일 → 취향 + 친밀도 분석
+오늘날 약속 장소를 정할 때 위치와 취향 조율에 불필요한 시간이 소비되는 경우가 많다. 기존 서비스는 단순 중간지점 계산에 그쳐 개인 취향이나 관계의 깊이를 반영하지 못한다.
 
-**입력** `application/json`
-```json
-{ "txt_content": "카카오톡 대화 내용 문자열" }
-```
-
-**출력**
-```json
-{
-  "senders": ["희주", "재영"],
-  "partner_name": "재영",
-  "intimacy_score": 77.5,
-  "intimacy_label": "친밀",
-  "radius_expansion": 1.5,
-  "purpose": "친목",
-  "preferred_food": ["피자"],
-  "avoided_food": ["라멘"],
-  "place_type": ["피자집"],
-  "secondary_place_type": ["카페"],
-  "mood": ["감성", "조용한"],
-  "search_query": "감성 피자집",
-  "keywords": ["감성", "조용한", "피자집"]
-}
-```
+Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고, 참여자가 지도에서 설정한 이동 가능 구역의 교집합 안에서 최적 장소를 추천한다. 날씨와 친밀도를 반영해 추천 범위를 조정하고, 멤버 간 투표로 장소를 확정하면 방문 이력이 히트맵으로 축적된다.
 
 ---
 
-### POST /recommend
-두 사람 위치 + 분석 결과 → 중간지점 + 장소 추천
+## 🔑 주요 적용 기술 및 구조
 
-**입력** `application/json`
-```json
-{
-  "user1": {"lat": 37.5665, "lng": 126.9780, "radius": 3000},
-  "user2": {"lat": 37.4979, "lng": 127.0276, "radius": 3000},
-  "search_query": "감성 피자집",
-  "mood": ["감성"],
-  "intimacy_score": 77.5
-}
-```
+### 개발 환경 및 도구
 
-**출력**
-```json
-{
-  "has_intersection": true,
-  "area_name": "서강대역 경의중앙선",
-  "center_lat": 37.5521,
-  "center_lng": 126.9355,
-  "search_radius": 3484,
-  "user1_transit": {"time": 7, "mode": "transit"},
-  "user2_transit": {"time": 7, "mode": "transit"},
-  "total_time": 14,
-  "weather": {
-    "condition": "clear",
-    "temp": 18.9,
-    "description": "맑음"
-  },
-  "places": [
-    {
-      "name": "피제리아더키",
-      "address": "서울 마포구 광성로 42-1",
-      "category": "음식점 > 양식 > 피자",
-      "lat": 37.5496,
-      "lng": 126.9377,
-      "url": "https://place.map.kakao.com/561289275",
-      "distance": 340
-    }
-  ]
-}
-```
+- **개발 환경**: Windows / macOS, Android, iOS, Web
+- **개발 도구**: Android Studio, VS Code, Git
+- **개발 언어**: Python, Dart
+- **프레임워크**: Flutter 3.x, Flask
+- **데이터베이스**: Firebase Firestore
+
+### 주요 개발 기술
+
+- 카카오톡 대화 파싱 및 취향 키워드 자동 추출
+- 규칙 기반 친밀도 점수 산출
+- 선호 구역 교집합 계산 및 중심 좌표 도출
+- 대중교통 접근성 기반 최적 지하철역 탐색
+- 교집합 영역 내 장소 검색 및 지도 시각화
+- 방문 히스토리 히트맵 시각화
 
 ---
 
-## DB 구조 (Firestore)
+## 💡 핵심 성과 및 독창성
 
-```
-users/{userId}
-├── userName: string
-└── rooms: [roomId, ...]
+<details>
+<summary><b>자동 취향 추출 파이프라인</b></summary>
+<div>
+  &nbsp;카카오톡 대화 파일 하나로 취향과 친밀도를 한 번에 파악할 수 있다. 별도 설문이나 수동 입력 없이 대화 속 선호를 자동으로 읽어낸다.
+</div>
+</details>
 
-rooms/{roomId}
-├── createdBy: string
-├── members: [userId, ...]          # 최대 5명
-├── memberNames: { userId: userName }
-├── roomTitle: string
-├── inviteCode: string
-├── maxMembers: number              # 3~5
-├── status: string                  # waiting / drawing / voting / confirmed
-├── updatedAt: timestamp            # 최근 활동 시각 (목록 정렬 기준)
-├── intimacyScore: number
-├── keywords: [string, ...]
-├── searchQuery: string
-├── mood: [string, ...]
-├── appointmentDate: timestamp
-├── places: [Map, ...]
-├── confirmedPlace: Map
-├── historySaved: boolean           # 히스토리 중복 저장 방지 플래그
-└── createdAt: timestamp
+<details>
+<summary><b>교집합 기반 중간지점 알고리즘</b></summary>
+<div>
+  &nbsp;단순 좌표 평균이 아닌, 각 참여자가 지도에서 이동 가능한 범위를 설정하면 구역이 겹치는 교집합 안에서 대중교통 기준 최적의 중간지점을 찾는다. 두 사람이 실제로 갈 수 있는 구역 안에서 중간지점을 잡는다.
+</div>
+</details>
 
-rooms/{roomId}/circles/{userId}
-├── lat, lng, radius: number
-└── updatedAt: timestamp
+<details>
+<summary><b>날씨 연동 접근성 보정</b></summary>
+<div>
+  &nbsp;날씨가 좋지 않을 때 탐색 반경을 줄이고 가까운 지하철역 근처로 추천 범위를 좁힌다.
+</div>
+</details>
 
-rooms/{roomId}/votes/{userId}
-└── selectedPlaceId: string
-
-rooms/{roomId}/messages/{messageId}
-├── userId, userName: string
-├── message: string
-└── createdAt: timestamp
-
-rooms/{roomId}/history/{historyId}
-├── confirmedPlace: Map
-├── members: [userId, ...]
-├── appointmentDate: timestamp
-├── intimacyScore: number
-└── date: timestamp
-
-rooms/{roomId}/history/{historyId}/records/{recordId}
-├── userId, userName: string
-├── review: string
-└── createdAt: timestamp
-```
+<details>
+<summary><b>관계 맥락 반영</b></summary>
+<div>
+  &nbsp;친밀도에 따라 이동 반경과 장소 성격이 달라진다. 친한 친구와의 만남과 업무 미팅은 다른 추천 결과를 제공한다.
+</div>
+</details>
 
 ---
 
-## 상태 흐름
+## 👍 기대 효과
 
-```
-waiting   → 방 생성 후 멤버 대기
-drawing   → 날짜 확정 후 지도에서 원 그리기
-voting    → 장소 후보 투표 진행
-confirmed → 최종 장소 확정 (확인 후 waiting으로 초기화)
-```
+- 대화 파일 업로드만으로 취향 분석 및 장소 추천 자동화
+- 모임 장소 선정 시 발생하는 시간 낭비와 갈등 해소
+- 친구·연인·직장 동료 등 다양한 관계와 상황에 폭넓게 활용 가능
+- 예약 플랫폼 연동 및 확장 가능성
 
 ---
 
-## 환경 변수 (.env)
+### 개발 언어
+![Python](https://img.shields.io/badge/Python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white)
 
-```
-OPENAI_API_KEY=
-KAKAO_JS_KEY=
-KAKAO_REST_KEY=
-OPENWEATHER_API_KEY=
-ODSAY_API_KEY=
-BASE_URL=        # Flask 서버 URL (미설정 시 로컬 기본값 사용)
-```
+### 프레임워크 & 도구
+![Flask](https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
+![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
+![OpenAI](https://img.shields.io/badge/GPT--4o--mini-412991?style=for-the-badge&logo=openai&logoColor=white)
+
+### 개발 도구
+![VSCode](https://img.shields.io/badge/VSCode-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white)
+![AndroidStudio](https://img.shields.io/badge/Android%20Studio-3DDC84?style=for-the-badge&logo=androidstudio&logoColor=white)
+![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
 
 ---
 
-## 배포
+## 👥 팀
 
-백엔드는 Railway에 배포되어 있음
+| 역할 | 이름 |
+|---|---|
+| 백엔드 · AI 모듈 | 양승연 |
+| 프론트엔드 · 지도 인터랙션 | 노희서 |
 
-```bash
-cd backend
-railway link   # 기존 프로젝트 연결
-railway up     # 배포
-```
-
-환경 변수는 Railway 대시보드 → Variables에서 설정 가능
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=FF6B9D,FF8E53&height=100&section=footer" width="100%" />
+</p>
