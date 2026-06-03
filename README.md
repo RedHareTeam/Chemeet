@@ -1,7 +1,11 @@
+<h1 align="center">Chemeet</h1>
+<p align="center">대화 분석 기반 모임 장소 추천 앱</p>
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=FF6B9D,FF8E53&height=200&text=🗺️%20Chemeet%20-%20대화%20분석%20기반%20모임%20장소%20추천&textColor=ffffff&fontSize=35&animation=twinkling&section=header" width="100%" />
+  <img src="https://img.shields.io/badge/Flutter-02569B?style=flat-square&logo=flutter&logoColor=white" />
+  <img src="https://img.shields.io/badge/Flask-000000?style=flat-square&logo=flask&logoColor=white" />
+  <img src="https://img.shields.io/badge/Firebase-FFCA28?style=flat-square&logo=firebase&logoColor=black" />
+  <img src="https://img.shields.io/badge/GPT--4o--mini-412991?style=flat-square&logo=openai&logoColor=white" />
 </p>
-<p align="center"><i>Chemeet : 카카오톡 대화를 분석해 취향과 중간지점을 함께 고려한 모임 장소 추천 앱</i></p>
 
 ---
 
@@ -9,7 +13,7 @@
 
 <div align="center">
   <a href="https://youtu.be/QrrKvhJ12bc" target="_blank">
-    <img src="https://img.youtube.com/vi/QrrKvhJ12bc/0.jpg" width="600px" />
+    <img width="600" alt="Chemeet 시연영상" src="https://github.com/user-attachments/assets/50b8356d-287a-4ee9-b5d2-f76bfccd2fbc" />
   </a>
 </div>
 
