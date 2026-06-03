@@ -1,5 +1,15 @@
-<h1 align="center">Chemeet</h1>
-<p align="center">대화 분석 기반 모임 장소 추천 앱</p>
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=FF6B9D,FF8E53&height=150&section=header" width="100%" />
+</p>
+
+<p align="center">
+  <img width="360" alt="Chemeet" src="https://github.com/user-attachments/assets/50b8356d-287a-4ee9-b5d2-f76bfccd2fbc" />
+</p>
+
+<p align="center">
+  <i>카카오톡 대화를 분석해 취향을 파악하고, 지도 위 선호 지역의 교집합 안에서 모두가 만족하는 모임 장소를 추천하는 앱</i>
+</p>
+
 <p align="center">
   <img src="https://img.shields.io/badge/Flutter-02569B?style=flat-square&logo=flutter&logoColor=white" />
   <img src="https://img.shields.io/badge/Flask-000000?style=flat-square&logo=flask&logoColor=white" />
@@ -47,6 +57,22 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 - 대중교통 접근성 기반 최적 지하철역 탐색
 - 교집합 영역 내 장소 검색 및 지도 시각화
 - 방문 히스토리 히트맵 시각화
+
+---
+
+## 🛠️ 시스템 구조
+
+<p align="center">
+  <img width="500" alt="시스템 구조도" src="https://github.com/user-attachments/assets/4bc16266-8b8a-4e29-ad0f-8473d6a17406" />
+</p>
+
+---
+
+## 📱 앱 화면
+
+<p align="center">
+  <img width="500" alt="앱 화면" src="https://github.com/user-attachments/assets/b9134f3b-445b-409c-94dc-eef855bd9b62" />
+</p>
 
 ---
 
