@@ -28,12 +28,17 @@ class AnalysisService {
 
       if (res.statusCode == 200) {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
+        final rawPlaceType = data['place_type'];
+        final rawSecondary = data['secondary_place_type'];
         result = {
-          'intimacyScore': data['intimacy_score'] ?? 74,
-          'keywords':      List<String>.from(data['keywords'] ?? []),
-          'partnerName':   data['partner_name'] ?? '상대방',
-          'searchQuery':   data['search_query'] ?? '맛집',
-          'mood':          List<String>.from(data['mood'] ?? []),
+          'purpose':            data['purpose'] ?? '친목',
+          'intimacyScore':      data['intimacy_score'] ?? 74,
+          'keywords':           List<String>.from(data['keywords'] ?? []),
+          'partnerName':        data['partner_name'] ?? '상대방',
+          'placeType':          (rawPlaceType is List ? (rawPlaceType as List).firstOrNull ?? '' : rawPlaceType ?? ''),
+          'secondaryPlaceType': (rawSecondary is List ? (rawSecondary as List).firstOrNull ?? '' : rawSecondary ?? ''),
+          'preferredFood':      List<String>.from(data['preferred_food'] ?? []),
+          'mood':               List<String>.from(data['mood'] ?? []),
         };
         debugPrint('분석 API 성공: $result');
       } else {
@@ -44,21 +49,27 @@ class AnalysisService {
       // 백엔드 미연결 환경에서도 앱이 정상 동작하도록 더미 데이터 폴백 처리.
       debugPrint('분석 API 오류 → 더미 데이터 사용: $e');
       result = {
-        'intimacyScore': 74,
-        'keywords':      ['카페', '조용한 곳', '낮 시간대', '실내', '브런치'],
-        'partnerName':   '상대방',
-        'searchQuery':   '카페',
-        'mood':          ['relaxed', 'cozy'],
+        'purpose':            '친목',
+        'intimacyScore':      74,
+        'keywords':           ['카페', '조용한 곳', '낮 시간대', '실내', '브런치'],
+        'partnerName':        '상대방',
+        'placeType':          '',
+        'secondaryPlaceType': '',
+        'preferredFood':      [],
+        'mood':               ['relaxed', 'cozy'],
       };
     }
 
     // 분석 결과를 Firestore에 저장 → RoomHomeScreen에서 watchRoom()으로 수신
     await _db.collection('rooms').doc(roomId).update({
-      'intimacyScore': result['intimacyScore'],
-      'keywords':      result['keywords'],
-      'partnerName':   result['partnerName'],
-      'searchQuery':   result['searchQuery'],
-      'mood':          result['mood'],
+      'purpose':            result['purpose'],
+      'intimacyScore':      result['intimacyScore'],
+      'keywords':           result['keywords'],
+      'partnerName':        result['partnerName'],
+      'placeType':          result['placeType'],
+      'secondaryPlaceType': result['secondaryPlaceType'],
+      'preferredFood':      result['preferredFood'],
+      'mood':               result['mood'],
     });
 
     return result;

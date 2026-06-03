@@ -12,17 +12,72 @@ EMOJI_PATTERN = re.compile(
 
 WARM_EMOJIS = {'❤️', '🥰', '😍', '💕', '💗', '💓', '🫶', '😊', '☺️', '🥺'}
 
-INFORMAL_ENDINGS = ['ㅋ', 'ㅎ', '야', '어', '지', '해', '잖아', '거든', '다고', '네', '래']
+# 자모 단독 패턴 (ㅋㅋ, ㅎㅎ, ㄱㄱ, ㅇㅇ 등) → 반말 강신호
+JAMO_PATTERN = re.compile(r'^[ㄱ-ㅎ]+$')
+
+INFORMAL_ENDINGS = [
+    'ㅋ', 'ㅎ',                          # 자모
+    '야', '아',                           # 호칭형 어미
+    '어', '아',                           # 반말 종결
+    '지', '지?',
+    '해', '해?',
+    '잖아', '거든', '다고', '래',
+    '가자', '하자', '먹자', '보자',        # 청유형
+    '할게', '볼게', '먹을게', '갈게',      # 1인칭 의지
+    '같은', '같고', '같아',               # 반말 서술
+    '확정', '완료',                        # 구어체 명사 종결
+    '돼', '돼?',
+    '때', '됨', '인듯', '인 듯',
+]
+
+# '네'는 단독이거나 존댓말 앞에 붙는 경우 제외
+# 반말 '네'는 "맞네", "좋네" 처럼 용언+네 형태
+INFORMAL_NE_PATTERN = re.compile(r'[가-힣]+네$')  # 용언+네 (맞네, 좋네, 그렇네)
+
 FORMAL_ENDINGS = ['요', '습니다', '니다', '세요', '드립니다', '겠습니다']
 
-# 친밀 호칭
-def has_informal_title(text):
-    return bool(re.search(r'(^|\s)(야|형|언니|오빠|누나)(\s|$|,|!)', text))
 # 격식 호칭
 def has_formal_title(text):
     return bool(re.search(r'(님|씨|대리|과장|팀장|부장|선생님|교수님)', text))
-# 새벽/늦은 밤 시간대
+
+# 친밀 호칭 (정규식 확장)
+def has_informal_title(text):
+    return bool(re.search(r'(^|\s)(야|형|언니|오빠|누나)(\s|$|[,!?ㅋㅎ])', text))
+
 LATE_NIGHT_HOURS = {0, 1, 2, 3, 4, 5, 6, 7, 22, 23}
+
+
+def is_informal(message):
+    """메시지가 반말인지 판단"""
+    msg = message.strip()
+    if not msg:
+        return False
+
+    # 자모만으로 이루어진 메시지 (ㅋㅋ, ㅎㅎ, ㄱㄱ, ㅇㅇ 등)
+    if JAMO_PATTERN.match(msg):
+        return True
+
+    # 반말 어미 체크
+    if any(msg.endswith(e) for e in INFORMAL_ENDINGS):
+        return True
+
+    # 용언+네 패턴 (맞네, 좋네, 그렇네)
+    if INFORMAL_NE_PATTERN.search(msg):
+        return True
+
+    return False
+
+
+def is_formal(message):
+    """메시지가 존댓말인지 판단"""
+    msg = message.strip()
+    if not msg:
+        return False
+    # '네'가 단독이거나 존댓말 앞에 붙은 경우 (네, 알겠습니다 / 네 맞아요)
+    # 단, 용언+네 패턴이면 반말이므로 제외
+    if msg == '네' or msg == '네.':
+        return True
+    return any(msg.endswith(e) for e in FORMAL_ENDINGS)
 
 
 def calculate_intimacy_score(messages):
@@ -30,18 +85,15 @@ def calculate_intimacy_score(messages):
         return 0
 
     total = len(messages)
-
-    # 인원 수 계산
     sender_count = len(set(m['sender'] for m in messages))
 
     # 1. 1인당 메시지 수 점수 (25점)
-    # 2명 기준 1인당 50개 = 만점, 인원 수 늘어도 공정하게 계산
     msg_per_person = total / sender_count
     msg_score = min(msg_per_person / 50, 1.0) * 25
 
     # 2. 반말 비율 점수 (35점)
-    informal = sum(1 for m in messages if any(m['message'].endswith(e) for e in INFORMAL_ENDINGS))
-    formal = sum(1 for m in messages if any(m['message'].endswith(e) for e in FORMAL_ENDINGS))
+    informal = sum(1 for m in messages if is_informal(m['message']))
+    formal = sum(1 for m in messages if is_formal(m['message']))
     total_style = informal + formal
     informal_ratio = informal / total_style if total_style > 0 else 0.5
     informal_score = informal_ratio * 35
@@ -78,6 +130,7 @@ def calculate_intimacy_score(messages):
     return round(min(max(total_score, 0), 100), 1)
 
 
+
 def get_intimacy_label(score):
     if score >= 75:
         return "친밀"
@@ -90,10 +143,6 @@ def get_intimacy_label(score):
 
 
 def calculate_radius_expansion(intimacy_score):
-    """
-    친밀도에 따른 반경 확장 배수 계산
-    친밀도 높을수록 반경 넓어짐 → 취향 기반 추천 범위 확대
-    """
     if intimacy_score <= 40:
         return 1.0
     elif intimacy_score <= 70:

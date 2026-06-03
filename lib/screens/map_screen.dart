@@ -392,10 +392,13 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _isRequesting = true);
 
     try {
-      final roomData       = await _roomService.getRoom(widget.roomId) ?? {};
-      final searchQuery    = roomData['searchQuery'] ?? '맛집';
-      final mood           = List<String>.from(roomData['mood'] ?? []);
-      final intimacyScore  = (roomData['intimacyScore'] ?? 50).toDouble();
+      final roomData            = await _roomService.getRoom(widget.roomId) ?? {};
+      final placeType          = roomData['placeType'] ?? '';
+      final secondaryPlaceType = roomData['secondaryPlaceType'] ?? '';
+      final purpose            = roomData['purpose'] ?? '친목';
+      final mood               = List<String>.from(roomData['mood'] ?? []);
+      final preferredFood      = List<String>.from(roomData['preferredFood'] ?? []);
+      final intimacyScore      = (roomData['intimacyScore'] ?? 50).toDouble();
 
       // 모든 파트너 원을 partners 배열로 전달 (백엔드가 지원하는 경우)
       // 백엔드가 2인만 지원하면 user2에 첫 번째 파트너를 사용
@@ -424,9 +427,12 @@ class _MapScreenState extends State<MapScreen> {
               return {'lat': d['lat'], 'lng': d['lng'], 'radius': d['radius']};
             }),
           ],
-          'search_query':   searchQuery,
-          'mood':           mood,
-          'intimacy_score': intimacyScore,
+          'place_type':           placeType,
+          'secondary_place_type': secondaryPlaceType,
+          'purpose':              purpose,
+          'mood':                 mood,
+          'preferred_food':       preferredFood,
+          'intimacy_score':       intimacyScore,
         }),
       ).timeout(const Duration(seconds: 15));
 
