@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../app_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/vote_service.dart';
 import '../services/circle_service.dart';
@@ -552,7 +552,7 @@ class _PlaceScreenState extends State<PlaceScreen>
                     : Stack(
                         children: [
                           _PlaceMapView(
-                            kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
+                            kakaoApiKey: AppConfig.kakaoJsKey,
                             circles: _circles,
                             places: widget.places,
                           ),
