@@ -63,7 +63,7 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 ## 📱 앱 화면
 
 <p align="center">
-  <img width="500" alt="앱 화면" src="https://github.com/user-attachments/assets/5611f9dc-db36-4a1e-aa49-1c05f97a8dcb" />
+  <img width="700" alt="앱 화면" src="https://github.com/user-attachments/assets/5611f9dc-db36-4a1e-aa49-1c05f97a8dcb" />
 </p>
 
 ---
