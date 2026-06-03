@@ -45,7 +45,8 @@ Chemeet/
     ├── main.dart                   # 앱 시작점, Firebase/.env 초기화, 첫 화면 분기
     ├── firebase_options.dart       # Firebase 플랫폼별 설정
     ├── app_theme.dart              # 공통 색상/텍스트/컴포넌트 테마 정의
-    ├── constants.dart              # 백엔드 baseUrl (iOS/Android 분기)
+    ├── app_config.dart             # 환경변수 접근 (--dart-define 우선, dotenv 폴백)
+    ├── constants.dart              # 백엔드 baseUrl (AppConfig 위임)
     ├── screens/
     │   ├── splash_screen.dart      # 스플래시 (Chemeet 로고 애니메이션, 로그인 분기)
     │   ├── auth_screen.dart        # 로그인/회원가입
@@ -217,22 +218,32 @@ confirmed → 최종 장소 확정 (확인 후 waiting으로 초기화)
 
 ---
 
-## 환경 변수 (.env)
+## 환경 변수
+
+### Flutter 앱 (.env)
+
+로컬 개발 시 프로젝트 루트에 `.env` 생성 (앱 빌드에만 필요한 키)
+
+```
+KAKAO_JS_KEY=
+KAKAO_REST_KEY=
+BASE_URL=        # Flask 서버 URL (미설정 시 로컬 기본값 사용)
+```
+
+### 백엔드 (Railway Variables)
 
 ```
 OPENAI_API_KEY=
-KAKAO_JS_KEY=
 KAKAO_REST_KEY=
 OPENWEATHER_API_KEY=
 ODSAY_API_KEY=
-BASE_URL=        # Flask 서버 URL (미설정 시 로컬 기본값 사용)
 ```
 
 ---
 
 ## 배포
 
-백엔드는 Railway에 배포되어 있음
+### 백엔드 (Railway)
 
 ```bash
 cd backend
@@ -240,4 +251,22 @@ railway link   # 기존 프로젝트 연결
 railway up     # 배포
 ```
 
-환경 변수는 Railway 대시보드 → Variables에서 설정 가능
+환경 변수는 Railway 대시보드 → Variables에서 설정
+
+### 웹 (Firebase Hosting)
+
+```bash
+# 1. 빌드 (API 키를 --dart-define으로 직접 주입, .env 파일 배포 안 됨)
+flutter build web --release \
+  --dart-define=KAKAO_JS_KEY=<your_key> \
+  --dart-define=KAKAO_REST_KEY=<your_key> \
+  --dart-define=BASE_URL=https://chemeet-production.up.railway.app
+
+# 2. 빌드 결과물에서 .env 제거
+rm -f build/web/assets/.env
+
+# 3. 배포
+firebase deploy --only hosting
+```
+
+> 카카오 개발자 콘솔에서 배포 도메인이 Web 플랫폼에 등록되어 있어야 지도가 동작함
