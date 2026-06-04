@@ -119,30 +119,47 @@ class RoomService {
     return snap.exists ? {...snap.data()!, 'roomId': snap.id} : null;
   }
 
-  // 장소 확정 히스토리 1회 저장 (트랜잭션으로 중복 방지)
+  // 장소 확정 히스토리 저장
+  // 트랜잭션 대신 배치 사용 → confirmPlace와 같은 문서를 동시에 쓸 때 precondition 충돌 방지
+  // 결정적 doc ID(placeId_ts)로 양쪽 클라이언트가 중복 저장해도 merge로 멱등 처리
   Future<void> saveConfirmHistory({
     required String roomId,
     required Map<String, dynamic> confirmedPlace,
     required List<String> members,
     required DateTime? appointmentDate,
   }) async {
-    final roomRef = _db.collection('rooms').doc(roomId);
-    final histRef = roomRef.collection('history').doc();
-    await _db.runTransaction((tx) async {
-      final snap = await tx.get(roomRef);
-      if (snap.data()?['historySaved'] == true) return;
-      final data = snap.data() ?? {};
-      tx.set(histRef, {
-        'confirmedPlace':  confirmedPlace,
-        'members':         members,
-        'appointmentDate': appointmentDate != null
-            ? Timestamp.fromDate(appointmentDate)
-            : null,
-        'intimacyScore':   data['intimacyScore'],
-        'date':            FieldValue.serverTimestamp(),
-      });
-      tx.update(roomRef, {'historySaved': true});
-    });
+    final roomSnap = await _db.collection('rooms').doc(roomId).get();
+    final data = roomSnap.data() ?? {};
+    if (data['historySaved'] == true) return;
+
+    final placeId = confirmedPlace['kakaoId'] ?? 'unknown';
+    final ts = appointmentDate?.millisecondsSinceEpoch ?? 0;
+    final histRef = _db
+        .collection('rooms')
+        .doc(roomId)
+        .collection('history')
+        .doc('${placeId}_$ts');
+
+    final batch = _db.batch();
+    batch.set(
+      histRef,
+      {
+        'confirmedPlace': confirmedPlace,
+        'members':        members,
+        if (appointmentDate != null)
+          'appointmentDate': Timestamp.fromDate(appointmentDate),
+        if (data['intimacyScore'] != null)
+          'intimacyScore': data['intimacyScore'],
+        'date': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    batch.set(
+      _db.collection('rooms').doc(roomId),
+      {'historySaved': true},
+      SetOptions(merge: true),
+    );
+    await batch.commit();
   }
 
   // (레거시 호환 - 내부 리셋이 필요한 경우 직접 호출)

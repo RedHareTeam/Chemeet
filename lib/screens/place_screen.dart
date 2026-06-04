@@ -210,8 +210,16 @@ class _PlaceScreenState extends State<PlaceScreen>
     final allSelected = votes.every((v) => v['selectedPlaceId'] != null);
     if (!allSelected) return;
 
+    // 현재 places에 없는 placeId는 이전 세션 잔여 vote → 무시
+    final validPlaceIds = widget.places.map((p) => p['kakaoId'] as String? ?? '').toSet();
+    final validVotes = votes.where((v) {
+      final id = v['selectedPlaceId'] as String?;
+      return id != null && validPlaceIds.contains(id);
+    }).toList();
+    if (validVotes.length < widget.members.length) return;
+
     final Map<String, int> tally = {};
-    for (final v in votes) {
+    for (final v in validVotes) {
       final id = v['selectedPlaceId'] as String;
       tally[id] = (tally[id] ?? 0) + 1;
     }
@@ -238,15 +246,15 @@ class _PlaceScreenState extends State<PlaceScreen>
       return;
     }
     final confirmed = confirmedList.first;
-    await Future.wait([
-      _roomService.saveConfirmHistory(
-        roomId: widget.roomId,
-        confirmedPlace: confirmed,
-        members: widget.members,
-        appointmentDate: widget.appointmentDate,
-      ),
-      _circleService.confirmPlace(widget.roomId, confirmed),
-    ]);
+    // confirmPlace 먼저 → status 'confirmed'로 변경
+    // saveConfirmHistory는 그 다음 → 트랜잭션 충돌 방지
+    await _circleService.confirmPlace(widget.roomId, confirmed);
+    await _roomService.saveConfirmHistory(
+      roomId: widget.roomId,
+      confirmedPlace: confirmed,
+      members: widget.members,
+      appointmentDate: widget.appointmentDate,
+    );
   }
 
   Future<void> _selectPlace(String placeId) async {
@@ -381,8 +389,11 @@ class _PlaceScreenState extends State<PlaceScreen>
   }
 
   /// 확정 후 세션 데이터 정리 (circles/votes/messages 삭제 + status 초기화)
-  /// 양쪽 유저가 동시에 호출해도 멱등적으로 동작
+  /// 서브컬렉션을 먼저 삭제한 뒤 status 변경 → 새 세션이 이전 votes를 보는 race condition 방지
   Future<void> _cleanupConfirmedSession() async {
+    for (final col in ['votes', 'circles', 'messages']) {
+      await _roomService.deleteSubcollection(widget.roomId, col);
+    }
     await FirebaseFirestore.instance
         .collection('rooms')
         .doc(widget.roomId)
@@ -392,9 +403,6 @@ class _PlaceScreenState extends State<PlaceScreen>
           'confirmedPlace': FieldValue.delete(),
           'appointmentDate': FieldValue.delete(),
         });
-    for (final col in ['circles', 'messages', 'votes']) {
-      await _roomService.deleteSubcollection(widget.roomId, col);
-    }
   }
 
   // ── 빌드 ────────────────────────────────────────────────
