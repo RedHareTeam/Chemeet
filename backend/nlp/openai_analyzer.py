@@ -168,6 +168,36 @@ def analyze_with_openai(messages):
   "mood": []
 }}
 
+[예시4]
+대화:
+[A] 나 요즘 케이크 너무 땡겨
+[B] 오 좋아 감성 있는 디저트 카페 가자
+[A] ㅇㅇ 조용한 데로
+
+올바른 분석:
+{{
+  "preferred_food": ["케이크"],
+  "avoided_food": [],
+  "place_type": ["디저트카페"],
+  "secondary_place_type": [],
+  "mood": ["감성", "조용한"]
+}}
+
+[예시5]
+대화:
+[A] 나 요즘 빵 너무 땡겨
+[B] 오 베이커리 카페 가자
+[A] ㅇㅇ 좋아
+
+올바른 분석:
+{{
+  "preferred_food": ["빵"],
+  "avoided_food": [],
+  "place_type": ["베이커리카페"],
+  "secondary_place_type": [],
+  "mood": []
+}}
+
 이제 아래 실제 대화를 분석해주세요:
 
 대화:
@@ -178,7 +208,7 @@ def analyze_with_openai(messages):
 place_type 규칙:
 - 1차 목적 장소만 1개 선택
 - "밥 먹고 카페", "2차로 카페"처럼 순서 있으면 식당만 place_type, 카페는 secondary_place_type
-- 반드시 아래 중에서만: 카페, 술집, 한식당, 파스타집, 라멘집, 피자집, 바, 스터디카페, 이자카야
+- 반드시 아래 중에서만: 카페, 술집, 한식당, 파스타집, 라멘집, 피자집, 바, 스터디카페, 이자카야, 디저트카페, 베이커리카페
 
 secondary_place_type 규칙:
 - 2차 장소 있으면 여기에 넣기
@@ -288,7 +318,7 @@ JSON으로만 응답:
                         parsed["secondary_place_type"] = ["베이커리카페"]
                         break
 
-        # search_query 생성
+        # search_query 생성 
         main_place = parsed["place_type"][0] if parsed["place_type"] else "맛집"
         parsed["search_query"] = main_place
 
