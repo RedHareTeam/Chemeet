@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../app_config.dart';
 
 class PlaceService {
-  static String get _kakaoRestKey => dotenv.env['KAKAO_REST_KEY'] ?? '';
+  static String get _kakaoRestKey => AppConfig.kakaoRestKey;
 
   // 교집합 중심점 근처 장소 카카오에서 바로 검색
   Future<List<Map<String, dynamic>>> searchNearby({

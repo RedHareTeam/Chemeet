@@ -277,6 +277,7 @@ class _RoomHomeScreenState extends State<RoomHomeScreen>
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           CustomScrollView(

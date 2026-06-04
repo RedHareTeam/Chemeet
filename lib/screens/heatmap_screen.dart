@@ -3,12 +3,11 @@ import 'dart:convert';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:chemeet/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../app_config.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import '../services/history_service.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/glassmorphic_container.dart';
-import '../widgets/gradient_button.dart';
 import '../widgets/platform_html_view.dart';
 
 // ── 데이터 모델 ────────────────────────────────────────────────────────
@@ -133,6 +132,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     );
     if (group.name.isEmpty) return;
 
+    final topPadding = MediaQuery.paddingOf(context).top;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -144,6 +144,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
           myUserName:     widget.myUserName,
           initialGroup:   group,
           historyService: _historyService,
+          topPadding:     topPadding,
         ),
       ),
     );
@@ -156,13 +157,14 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           // 전체 화면 지도
           Positioned.fill(
             child: _HeatmapMapView(
               key:         _mapKey,
-              kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
+              kakaoApiKey: AppConfig.kakaoJsKey,
               onMapReady:  _onMapReady,
               onPinTapped: _onPinTapped,
             ),
@@ -696,6 +698,7 @@ class _PlaceDetailSheet extends StatefulWidget {
   final String         myUserName;
   final _PlaceGroup    initialGroup;
   final HistoryService historyService;
+  final double         topPadding;
 
   const _PlaceDetailSheet({
     required this.roomId,
@@ -703,6 +706,7 @@ class _PlaceDetailSheet extends StatefulWidget {
     required this.myUserName,
     required this.initialGroup,
     required this.historyService,
+    required this.topPadding,
   });
 
   @override
@@ -710,8 +714,16 @@ class _PlaceDetailSheet extends StatefulWidget {
 }
 
 class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
-  late _PlaceGroup       _group;
-  StreamSubscription?    _sub;
+  late _PlaceGroup              _group;
+  StreamSubscription?           _sub;
+  String?                       _activeHistoryId;
+  final _reviewCtrl           = TextEditingController();
+  bool   _submitting          = false;
+  final _sheetCtrl            = DraggableScrollableController();
+  double _sizeBeforeExpand    = 0.65;
+  bool   _sheetExpanded       = false;
+  double _maxSize             = 0.95;
+  double _prevKeyboardHeight  = 0;
 
   @override
   void initState() {
@@ -746,7 +758,62 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
   @override
   void dispose() {
     _sub?.cancel();
+    _reviewCtrl.dispose();
+    _sheetCtrl.dispose();
     super.dispose();
+  }
+
+  void _closeInput() {
+    setState(() => _activeHistoryId = null);
+    FocusScope.of(context).unfocus();
+    if (_sheetCtrl.isAttached && _sheetExpanded) {
+      _sheetExpanded = false;
+      _sheetCtrl.animateTo(_sizeBeforeExpand,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
+    }
+  }
+
+  Future<void> _submitRecord() async {
+    if (_reviewCtrl.text.trim().isEmpty || _submitting || _activeHistoryId == null) return;
+    setState(() => _submitting = true);
+    try {
+      await widget.historyService.addRecord(
+        roomId:    widget.roomId,
+        historyId: _activeHistoryId!,
+        userId:    widget.myUserId,
+        userName:  widget.myUserName,
+        review:    _reviewCtrl.text.trim(),
+      );
+      if (mounted) {
+        _reviewCtrl.clear();
+        setState(() => _submitting = false);
+        _closeInput();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final kh = MediaQuery.viewInsetsOf(context).bottom;
+    if (kh == _prevKeyboardHeight) return;
+    _prevKeyboardHeight = kh;
+
+    if (kh > 0 && _activeHistoryId != null && _sheetCtrl.isAttached && !_sheetExpanded) {
+      _sizeBeforeExpand = _sheetCtrl.size;
+      _sheetExpanded = true;
+      _sheetCtrl.animateTo(_maxSize,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
+    } else if (kh == 0 && _sheetExpanded && _sheetCtrl.isAttached) {
+      _sheetExpanded = false;
+      _sheetCtrl.animateTo(_sizeBeforeExpand,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut);
+    }
   }
 
   Color _countColor(int count) {
@@ -758,13 +825,16 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final color = _countColor(_group.count);
+    final screenH = MediaQuery.sizeOf(context).height;
+    _maxSize = ((screenH - widget.topPadding - 8) / screenH).clamp(0.5, 1.0);
 
     return DraggableScrollableSheet(
+      controller:       _sheetCtrl,
       initialChildSize: 0.65,
       minChildSize:     0.4,
-      maxChildSize:     0.95,
+      maxChildSize:     _maxSize,
       snap:             true,
-      builder: (_, scrollCtrl) => Container(
+      builder: (ctx, scrollCtrl) => Container(
         decoration: const BoxDecoration(
           color: AppTheme.bg,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -859,13 +929,13 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryBg,
+                            color: color.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.map_outlined,
                             size: 18,
-                            color: AppTheme.primary,
+                            color: color,
                           ),
                         ),
                       ),
@@ -895,10 +965,85 @@ class _PlaceDetailSheetState extends State<_PlaceDetailSheet> {
                     myUserId:       widget.myUserId,
                     myUserName:     widget.myUserName,
                     historyService: widget.historyService,
+                    isActive:       _activeHistoryId == historyId,
+                    onRecordTap:    () => setState(() {
+                      _activeHistoryId = historyId;
+                      _reviewCtrl.clear();
+                    }),
                   );
                 },
               ),
             ),
+
+            // 고정 입력바 (키보드 위)
+            if (_activeHistoryId != null)
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Color(0x18000000))),
+                ),
+                padding: EdgeInsets.fromLTRB(
+                    12, 8, 12, 8 + MediaQuery.viewInsetsOf(ctx).bottom),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _reviewCtrl,
+                        autofocus: true,
+                        maxLines: 4,
+                        minLines: 1,
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
+                        decoration: InputDecoration(
+                          hintText: '기억을 남겨보세요...',
+                          hintStyle: const TextStyle(
+                              color: AppTheme.textMuted, fontSize: 14),
+                          filled: true,
+                          fillColor: AppTheme.bg,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: const BorderSide(color: AppTheme.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: const BorderSide(
+                                color: AppTheme.primary, width: 1.5),
+                          ),
+                          suffixIcon: GestureDetector(
+                            onTap: _closeInput,
+                            child: const Icon(Icons.close_rounded,
+                                size: 18, color: AppTheme.textMuted),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _reviewCtrl.text.trim().isNotEmpty ? _submitRecord : null,
+                      child: Container(
+                        width: 40, height: 40,
+                        margin: const EdgeInsets.only(bottom: 2),
+                        decoration: BoxDecoration(
+                          color: _reviewCtrl.text.trim().isNotEmpty
+                              ? AppTheme.primary
+                              : AppTheme.disabled,
+                          shape: BoxShape.circle,
+                        ),
+                        child: _submitting
+                            ? const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2))
+                            : const Icon(Icons.send_rounded,
+                                color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -914,6 +1059,8 @@ class _VisitCard extends StatefulWidget {
   final String         myUserId;
   final String         myUserName;
   final HistoryService historyService;
+  final VoidCallback   onRecordTap;
+  final bool           isActive;
 
   const _VisitCard({
     required this.roomId,
@@ -922,6 +1069,8 @@ class _VisitCard extends StatefulWidget {
     required this.myUserId,
     required this.myUserName,
     required this.historyService,
+    required this.onRecordTap,
+    required this.isActive,
   });
 
   @override
@@ -929,16 +1078,7 @@ class _VisitCard extends StatefulWidget {
 }
 
 class _VisitCardState extends State<_VisitCard> {
-  bool _deleting    = false;
-  bool _showInput   = false;
-  bool _submitting  = false;
-  final _reviewCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _reviewCtrl.dispose();
-    super.dispose();
-  }
+  bool _deleting = false;
 
   String _formatDate(DateTime dt) {
     const wds = ['월', '화', '수', '목', '금', '토', '일'];
@@ -970,26 +1110,6 @@ class _VisitCardState extends State<_VisitCard> {
           widget.roomId, widget.historyId);
     } catch (_) {
       if (mounted) setState(() => _deleting = false);
-    }
-  }
-
-  Future<void> _submitRecord() async {
-    if (_reviewCtrl.text.trim().isEmpty || _submitting) return;
-    setState(() => _submitting = true);
-    try {
-      await widget.historyService.addRecord(
-        roomId:    widget.roomId,
-        historyId: widget.historyId,
-        userId:    widget.myUserId,
-        userName:  widget.myUserName,
-        review:    _reviewCtrl.text.trim(),
-      );
-      if (mounted) {
-        _reviewCtrl.clear();
-        setState(() { _showInput = false; _submitting = false; });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -1087,128 +1207,37 @@ class _VisitCardState extends State<_VisitCard> {
                                   widget.historyId,
                                   r['recordId'] as String),
                         )),
-                    // 인라인 입력 / 기록 추가 버튼
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeInOut,
-                      child: _showInput
-                          ? Padding(
-                              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  TextField(
-                                    controller: _reviewCtrl,
-                                    maxLines: 3,
-                                    autofocus: true,
-                                    onChanged: (_) => setState(() {}),
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        color: AppTheme.textDark,
-                                        height: 1.6),
-                                    decoration: InputDecoration(
-                                      hintText: '이 장소에서의 기억을 남겨보세요...',
-                                      hintStyle: const TextStyle(
-                                          color: AppTheme.textMuted,
-                                          fontSize: 13),
-                                      filled: true,
-                                      fillColor: AppTheme.bg,
-                                      contentPadding: const EdgeInsets.all(12),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                            color: AppTheme.border),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                            color: AppTheme.primary,
-                                            width: 1.5),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: GestureDetector(
-                                          onTap: () => setState(() {
-                                            _showInput = false;
-                                            _reviewCtrl.clear();
-                                          }),
-                                          child: Container(
-                                            height: 40,
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.bg,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: const Center(
-                                              child: Text(
-                                                '취소',
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: AppTheme.textMuted,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        flex: 2,
-                                        child: GradientButton(
-                                          onTap: _submitRecord,
-                                          enabled: _reviewCtrl.text.trim().isNotEmpty,
-                                          loading: _submitting,
-                                          height: 40,
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: const Text(
-                                            '저장',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            )
-                          : GestureDetector(
-                              onTap: () => setState(() => _showInput = true),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primary
-                                      .withValues(alpha: 0.04),
-                                  borderRadius: const BorderRadius.vertical(
-                                      bottom: Radius.circular(20)),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.add_circle_outline,
-                                        size: 15, color: AppTheme.primary),
-                                    const SizedBox(width: 6),
-                                    const Text(
-                                      '기록 남기기',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppTheme.primary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                    GestureDetector(
+                      onTap: widget.isActive ? null : widget.onRecordTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: widget.isActive
+                              ? AppTheme.primary.withValues(alpha: 0.08)
+                              : AppTheme.primary.withValues(alpha: 0.04),
+                          borderRadius: const BorderRadius.vertical(
+                              bottom: Radius.circular(20)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              widget.isActive
+                                  ? Icons.edit_rounded
+                                  : Icons.add_circle_outline,
+                              size: 15, color: AppTheme.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              widget.isActive ? '입력 중...' : '기록 남기기',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.primary,
+                              )),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 );

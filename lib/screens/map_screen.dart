@@ -4,7 +4,7 @@ import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../app_config.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:pointer_interceptor/pointer_interceptor.dart';
@@ -626,7 +626,7 @@ class _MapScreenState extends State<MapScreen> {
           Positioned.fill(
             child: KakaoMapWebView(
               key: _mapKey,
-              kakaoApiKey: dotenv.env['KAKAO_JS_KEY'] ?? '',
+              kakaoApiKey: AppConfig.kakaoJsKey,
               onCenterChanged: (lat, lng) {},
               onCircleDrawn: _onCircleDrawn,
               onMapReady: _onMapReady,
