@@ -80,7 +80,7 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 <details>
 <summary><b>교집합 기반 중간지점 알고리즘</b></summary>
 <div>
-  &nbsp;단순 좌표 평균이 아닌, 각 참여자가 지도에서 이동 가능한 범위를 설정하면 구역이 겹치는 교집합 안에서 대중교통 기준 최적의 중간지점을 찾는다. 두 사람이 실제로 갈 수 있는 구역 안에서 중간지점을 잡는다.
+  &nbsp;단순 좌표 평균이 아닌, 각 참여자가 지도에서 이동 가능한 범위를 설정하면 구역이 겹치는 교집합 안에서 대중교통 기준 최적의 중간지점을 찾는다. 참여자 모두가 실제로 갈 수 있는 구역 안에서 중간지점을 잡는다.
 </div>
 </details>
 
@@ -118,6 +118,12 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
 ![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
 ![OpenAI](https://img.shields.io/badge/GPT--4o--mini-412991?style=for-the-badge&logo=openai&logoColor=white)
+![Shapely](https://img.shields.io/badge/Shapely-2.0-green?style=for-the-badge)
+
+### API
+![KakaoMap](https://img.shields.io/badge/Kakao%20Maps%20API-FFCD00?style=for-the-badge&logo=kakao&logoColor=black)
+![ODsay](https://img.shields.io/badge/ODsay%20API-0066CC?style=for-the-badge)
+![OpenWeather](https://img.shields.io/badge/OpenWeather%20API-EB6E4B?style=for-the-badge&logo=openweathermap&logoColor=white)
 
 ### 개발 도구
 ![VSCode](https://img.shields.io/badge/VSCode-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white)

@@ -28,7 +28,6 @@ PLACE_TYPE_MAP = {
     "브런치": "브런치카페",
 }
 
-# avoided_food → place_type 매핑 
 FOOD_PLACE_MAP = {
     "라멘": "라멘집",
     "파스타": "파스타집",
@@ -62,7 +61,6 @@ FOOD_PLACE_MAP = {
     "샐러드": "샐러드",
 }
 
-# preferred_food 키워드 → secondary_place_type 매핑
 DESSERT_KEYWORDS = ["디저트", "케이크", "마카롱", "타르트", "와플"]
 BAKERY_KEYWORDS  = ["빵", "베이커리", "크루아상", "스콘"]
 
@@ -97,12 +95,10 @@ def detect_purpose(conversation):
 
 
 def has_strong_signal(conversation, keywords, threshold=2):
-    """키워드가 threshold번 이상 등장해야 강한 신호로 판단"""
     return sum(conversation.count(k) for k in keywords) >= threshold
 
 
 def detect_secondary_cafe_type(preferred_food):
-    """preferred_food 기반으로 2차 카페 타입 결정"""
     for food in preferred_food:
         if any(k in food for k in DESSERT_KEYWORDS):
             return "디저트카페"
@@ -112,10 +108,6 @@ def detect_secondary_cafe_type(preferred_food):
 
 
 def analyze_with_openai(messages):
-    """
-    OpenAI API로 대화 분석
-    취향 키워드 추출 (preferred_food, avoided_food, place_type, mood)
-    """
     load_dotenv()
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -230,7 +222,6 @@ JSON으로만 응답:
                 result = result[4:]
         parsed = json.loads(result)
 
-        # PLACE_TYPE_MAP 변환
         parsed["place_type"] = [
             PLACE_TYPE_MAP.get(p, p)
             for p in parsed.get("place_type", [])
@@ -240,11 +231,9 @@ JSON으로만 응답:
             for p in parsed.get("secondary_place_type", [])
         ]
 
-        # 1. avoided에 있는 음식은 preferred에서 제거
         preferred = parsed.get("preferred_food", [])
         avoided = parsed.get("avoided_food", [])
 
-        # 룰 기반 avoided 보정: "저번에 X 먹었으니까" 패턴 직접 추출
         import re
         rule_avoided = re.findall(r'저번에\s+(\S+)\s+먹었으니까', conversation)
         for food in rule_avoided:
@@ -255,14 +244,12 @@ JSON으로만 응답:
 
         parsed["preferred_food"] = [f for f in preferred if f not in avoided]
 
-        # avoided_food 기반 preferred 강제 제거 (GPT 오류 보정)
         avoided_normalized = [f.strip() for f in avoided]
         parsed["preferred_food"] = [
             f for f in parsed["preferred_food"]
             if f.strip() not in avoided_normalized
         ]
 
-        # 2. place_type 최대 1개
         if parsed["preferred_food"]:
             top_food = parsed["preferred_food"][-1]
             if top_food in FOOD_PLACE_MAP:
@@ -270,31 +257,26 @@ JSON으로만 응답:
 
         parsed["place_type"] = parsed["place_type"][:1]
 
-        # 3. avoided_food 기반 place_type 보정
         for food in avoided:
             bad_place = FOOD_PLACE_MAP.get(food)
             if bad_place and bad_place in parsed["place_type"]:
                 parsed["place_type"] = [p for p in parsed["place_type"] if p != bad_place]
 
-        # place_type 비었으면 preferred_food 기반으로 채우기
         if not parsed["place_type"] and parsed["preferred_food"]:
             top_food = parsed["preferred_food"][0]
             if top_food in FOOD_PLACE_MAP:
                 parsed["place_type"] = [FOOD_PLACE_MAP[top_food]]
 
-        # 4. mood 표준화 + 중복 제거
         parsed["mood"] = list(dict.fromkeys(
             MOOD_NORMALIZE.get(m, m) for m in parsed.get("mood", [])
         ))
 
-        # 5. preferred_food 기반 secondary_place_type 보정
         secondary = parsed.get("secondary_place_type", [])
         if secondary and secondary[0] == "카페":
             cafe_type = detect_secondary_cafe_type(parsed["preferred_food"])
             if cafe_type:
                 parsed["secondary_place_type"] = [cafe_type]
 
-        # secondary_place_type 없어도 대화 원문에서 디저트/베이커리 키워드 직접 감지
         if not parsed.get("secondary_place_type") or parsed["secondary_place_type"] == ["카페"]:
             for keyword in DESSERT_KEYWORDS:
                 if keyword in conversation:
@@ -305,6 +287,10 @@ JSON으로만 응답:
                     if keyword in conversation:
                         parsed["secondary_place_type"] = ["베이커리카페"]
                         break
+
+        # search_query 생성
+        main_place = parsed["place_type"][0] if parsed["place_type"] else "맛집"
+        parsed["search_query"] = main_place
 
         parsed['purpose'] = purpose
         parsed['senders'] = senders
@@ -318,5 +304,6 @@ JSON으로만 응답:
             "place_type": [],
             "secondary_place_type": [],
             "mood": [],
+            "search_query": "맛집",
             "senders": senders
         }

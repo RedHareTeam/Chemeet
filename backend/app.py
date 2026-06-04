@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from kakao.kakao_parser import parse_kakao_txt
 from nlp.openai_analyzer import analyze_with_openai
 from nlp.rule_based import calculate_intimacy_score, get_intimacy_label, calculate_radius_expansion
@@ -11,6 +12,16 @@ from recommend.weather import get_weather, get_weather_forecast
 from recommend.midpoint import find_best_midpoint
 
 app = Flask(__name__)
+CORS(app)
+
+QUERY_TO_PLACE_TYPE = {
+    "카페": "카페", "노트북 카페": "카페", "술집 맛집": "술집",
+    "맛집": "한식당", "한식당": "한식당", "파스타집": "파스타집",
+    "라멘집": "라멘집", "피자집": "피자집", "술집": "술집",
+    "이자카야": "이자카야", "바": "바", "스터디카페": "스터디카페",
+    "감성 카페": "카페", "감성 한식당": "한식당", "감성 파스타집": "파스타집",
+    "감성 라멘집": "라멘집", "감성 피자집": "피자집",
+}
 
 @app.route('/')
 def index():
@@ -49,6 +60,11 @@ def analyze():
 
         senders = keywords['senders']
 
+        # search_query 생성 
+        place_type_list = keywords.get('place_type', [])
+        main_place = place_type_list[0] if place_type_list else '맛집'
+        search_query = keywords.get('search_query', main_place)
+
         return jsonify({
             "senders": senders,
             "partner_name": senders[1] if len(senders) >= 2 else "",
@@ -61,6 +77,7 @@ def analyze():
             "place_type": keywords['place_type'],
             "secondary_place_type": keywords['secondary_place_type'],
             "mood": keywords['mood'],
+            "search_query": search_query,
             "keywords": keywords['mood'] + keywords['place_type'],
         })
 
@@ -70,7 +87,6 @@ def analyze():
 
 
 def _search_and_filter(place_type, mood, preferred_food, center_lat, center_lng, search_radius, users, radius_expansion, station_lat, station_lng, purpose=None):
-    """장소 검색 + 필터링 + 정렬 공통 로직"""
     queries = build_search_queries(place_type, mood, preferred_food, purpose)
 
     results = search_with_multi_query(
@@ -80,7 +96,6 @@ def _search_and_filter(place_type, mood, preferred_food, center_lat, center_lng,
         size_per_query=10
     )
 
-    # 중복 제거 (kakaoId 기반, 이미 search_with_multi_query에서 처리되나 name 기반 2차 보정)
     seen = set()
     unique_places = []
     for p in results:
@@ -88,11 +103,9 @@ def _search_and_filter(place_type, mood, preferred_food, center_lat, center_lng,
             seen.add(p['name'])
             unique_places.append(p)
 
-    # 카테고리 필터링
     filtered = filter_by_category(unique_places, place_type)
     top_places = filtered[:20]
 
-    # 교집합 외부 장소 제거
     try:
         shape = get_intersection_shape(users, radius_expansion)
         if shape:
@@ -102,7 +115,6 @@ def _search_and_filter(place_type, mood, preferred_food, center_lat, center_lng,
     except Exception as e:
         print(f"교집합 필터 오류: {e}")
 
-    # 지하철역 근접도 기반 순위 재조정
     if station_lat is not None:
         def dist_to_station(p):
             dlat = (p['lat'] - station_lat) * 111000
@@ -127,6 +139,9 @@ def recommend():
     preferred_food = data.get('preferred_food', [])
     purpose = data.get('purpose', '친목')
 
+    search_query = data.get('search_query', '')
+    place_type_raw = data.get('place_type') or QUERY_TO_PLACE_TYPE.get(search_query, '')
+
     if not users or len(users) < 2:
         return jsonify({"error": "users 좌표가 2명 이상 필요합니다"}), 400
 
@@ -140,7 +155,6 @@ def recommend():
     center_lng   = intersection["center_lng"]
     search_radius = intersection["search_radius"]
 
-    # 교집합 내 최적 지하철역 탐색
     try:
         midpoint = find_best_midpoint(users, radius_expansion)
     except Exception as e:
@@ -151,7 +165,6 @@ def recommend():
     station_lat = midpoint["center_lat"] if midpoint else None
     station_lng = midpoint["center_lng"] if midpoint else None
 
-    # 날씨 정보 가져오기
     try:
         weather = get_weather(center_lat, center_lng)
     except Exception as e:
@@ -159,7 +172,6 @@ def recommend():
         weather = {"condition": "clear", "temp": 0, "description": "알 수 없음"}
     condition = weather.get("condition", "clear")
 
-    # 날씨 나쁠 때 반경 줄이기 + 역 근처로 중심 이동
     if condition in ["rain", "snow", "thunder"]:
         search_radius = min(search_radius, 1500)
         stations = search_places("지하철역", center_lat, center_lng, radius=2000, size=3)
@@ -169,17 +181,15 @@ def recommend():
             center_lng = nearest['lng']
             area_name  = nearest['name']
 
-    # place_type 처리
-    place_type = data.get('place_type', '')
-    if isinstance(place_type, list):
-        place_type = place_type[0] if place_type else ''
+    if isinstance(place_type_raw, list):
+        place_type = place_type_raw[0] if place_type_raw else ''
+    else:
+        place_type = place_type_raw or ''
 
-    # secondary_place_type 처리
     secondary_place_type = data.get('secondary_place_type', '')
     if isinstance(secondary_place_type, list):
         secondary_place_type = secondary_place_type[0] if secondary_place_type else ''
 
-    # 1차 장소 검색
     top_places = _search_and_filter(
         place_type, mood, preferred_food,
         center_lat, center_lng,
@@ -190,10 +200,8 @@ def recommend():
     if len(top_places) < 2:
         return jsonify({"error": "추천 장소가 2곳 미만입니다. 원을 더 넓게 그려주세요."}), 422
 
-    # 2차 장소 검색 (secondary_place_type 있을 때만)
     secondary_places = []
     if secondary_place_type:
-        # 2차 장소는 preferred_food에서 디저트/베이커리 키워드만 활용
         dessert_foods = [f for f in preferred_food if any(k in f for k in ["디저트", "케이크", "마카롱", "타르트", "와플", "빵", "크루아상", "스콘"])]
         secondary_places = _search_and_filter(
             secondary_place_type, mood, dessert_foods,
