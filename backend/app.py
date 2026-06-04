@@ -21,6 +21,7 @@ QUERY_TO_PLACE_TYPE = {
     "이자카야": "이자카야", "바": "바", "스터디카페": "스터디카페",
     "감성 카페": "카페", "감성 한식당": "한식당", "감성 파스타집": "파스타집",
     "감성 라멘집": "라멘집", "감성 피자집": "피자집",
+    "디저트카페": "디저트카페", "베이커리카페": "베이커리카페",
 }
 
 @app.route('/')
@@ -60,7 +61,7 @@ def analyze():
 
         senders = keywords['senders']
 
-        # search_query 생성 
+        # search_query 생성
         place_type_list = keywords.get('place_type', [])
         main_place = place_type_list[0] if place_type_list else '맛집'
         search_query = keywords.get('search_query', main_place)
