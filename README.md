@@ -15,7 +15,7 @@
 
 <div align="center">
   <a href="https://youtu.be/QrrKvhJ12bc" target="_blank">
-    <img width="600" alt="Chemeet 시연영상" src="https://github.com/user-attachments/assets/50b8356d-287a-4ee9-b5d2-f76bfccd2fbc" />
+    <img width="600" alt="Chemeet 시연영상" src="assets/icon/screen.png" />
   </a>
 </div>
 
@@ -55,7 +55,7 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 ## 🛠️ 시스템 구조
 
 <p align="center">
-  <img width="500" alt="시스템 구조도" src="https://github.com/user-attachments/assets/4bc16266-8b8a-4e29-ad0f-8473d6a17406" />
+  <img width="500" alt="시스템 구조도" src="assets/icon/system.png" />
 </p>
 
 ---
@@ -63,7 +63,7 @@ Chemeet은 카카오톡 대화 분석으로 취향과 친밀도를 파악하고,
 ## 📱 앱 화면
 
 <p align="center">
-  <img width="700" alt="앱 화면" src="https://github.com/user-attachments/assets/5611f9dc-db36-4a1e-aa49-1c05f97a8dcb" />
+  <img width="700" alt="앱 화면" src="assets/icon/chemeet.png" />
 </p>
 
 ---
